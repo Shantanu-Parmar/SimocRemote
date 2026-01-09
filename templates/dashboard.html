@@ -7,8 +7,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         body { 
             background: url('/static/BKG.png') no-repeat center center fixed; 
@@ -44,74 +42,8 @@
         label { color: orange; }
         .btn-warning { background-color: orange; border-color: orange; color: black; }
         .btn-warning:hover { background-color: #ffaa00; border-color: #ffaa00; }
-        .btn-success { background-color: #28a745; border-color: #28a745; }
         .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
         hr { border-color: rgba(255,165,0,0.3); margin: 60px 0; }
-
-        .mode-toggle {
-            position: relative;
-            display: inline-block;
-            width: 60px;
-            height: 30px;
-            margin: 0 15px;
-        }
-        .mode-toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #444;
-            transition: .4s;
-            border-radius: 30px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 24px;
-            width: 24px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        input:checked + .slider {
-            background-color: #00FF88; /* Bright green when Educator mode */
-        }
-        input:checked + .slider:before {
-            transform: translateX(30px);
-        }
-        .slider.round {
-            border-radius: 34px;
-        }
-        .slider.round:before {
-            border-radius: 50%;
-        }
-        .toggle-label {
-            display: flex;
-            align-items: center;
-            color: white;
-            font-weight: bold;
-            font-size: 18px;
-        }
-        .researcher { margin-right: 15px; }
-        .educator { margin-left: 15px; }
-        .chart-box {
-            width: 100% !important;
-            height: 100% !important;
-            position: relative;
-            width: 450px;
-            height: 350px;
-            background: rgba(0, 0, 0, 0.6); /* Same dark overlay as main charts */
-            border-radius: 10px;
-            margin: 15px;
-            padding: 10px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
     </style>
 </head>
 <body>
@@ -120,733 +52,682 @@
             <img src="/static/logo.png" alt="Logo">
             <span>SIMOC</span>
         </div>
-        <div class="toggle-label">
-            <span class="researcher">Researcher</span>
-            <label class="mode-toggle">
-                <input type="checkbox" id="mode-toggle" onchange="toggleMode()">
-                <span class="slider"></span>
-            </label>
-            <span class="educator">Educator</span>
-        </div>
-        <div></div>
+        <div style="flex: 1;"></div> <!-- spacer - no toggle anymore -->
     </div>
 
-    <div id="researcher-content">
+    <div class="container mt-4">
         <ul class="nav nav-tabs justify-content-center" id="myTab" role="tablist">
             <li class="nav-item"><button class="nav-link active" id="main-tab" data-bs-toggle="tab" data-bs-target="#main">Main</button></li>
             {% for sensor in sensors %}
                 <li class="nav-item"><button class="nav-link" id="{{ sensor }}-tab" data-bs-toggle="tab" data-bs-target="#{{ sensor }}">{{ sensor }}</button></li>
             {% endfor %}
         </ul>
-        
-        <div class="container mt-4">
-            <div class="tab-content" id="myTabContent">
-                <div class="tab-pane fade show active" id="main" role="tabpanel">
-                    <h2 class="text-center mb-4">Last 2 Hours - Live View</h2>
-                    <div class="row">
-                        {% for sensor in sensors %}
-                            <div class="{{ live_col_class }}">
-                                <h4 class="text-center">{{ sensor }}</h4>
-                                <div id="{{ sensor }}-live-loading" class="chart-container" style="position: relative;">
-                                    <div class="spinner"></div>
-                                    <div class="loading-text">Loading live data...</div>
-                                </div>
-                                <div class="chart-container" style="display:none;" id="{{ sensor }}-live-container">
-                                    <canvas id="{{ sensor }}-live-chart"></canvas>
-                                </div>
+
+        <div class="tab-content" id="myTabContent">
+            <!-- MAIN TAB (Live + Overview) -->
+            <div class="tab-pane fade show active" id="main" role="tabpanel">
+                <h2 class="text-center mb-4 mt-4">Last 2 Hours - Live View</h2>
+                <div class="row">
+                    {% for sensor in sensors %}
+                        <div class="{{ live_col_class }}">
+                            <h4 class="text-center">{{ sensor }}</h4>
+                            <div id="{{ sensor }}-live-loading" class="chart-container" style="position: relative;">
+                                <div class="spinner"></div>
+                                <div class="loading-text">Loading live data...</div>
                             </div>
-                        {% endfor %}
-                    </div>
-                    
-                    <hr>
-                    
-                    <h2 class="text-center mb-4">Full History - Overview</h2>
-                    <div class="row">
-                        {% for sensor in sensors %}
-                            <div class="col-lg-6 col-md-6 col-sm-12">
-                                <h4 class="text-center">{{ sensor }} - Full Dataset</h4>
-                                <div id="{{ sensor }}-total-loading" class="chart-container" style="position: relative;">
-                                    <div class="spinner"></div>
-                                    <div class="loading-text">Loading history...</div>
-                                </div>
-                                <div class="chart-container" style="display:none;" id="{{ sensor }}-total-container">
-                                    <canvas id="{{ sensor }}-total-chart"></canvas>
-                                </div>
+                            <div class="chart-container" style="display:none;" id="{{ sensor }}-live-container">
+                                <canvas id="{{ sensor }}-live-chart"></canvas>
                             </div>
-                        {% endfor %}
-                    </div>
+                        </div>
+                    {% endfor %}
                 </div>
-                
-                {% for sensor, info in sensors.items() %}
-                    <div class="tab-pane fade" id="{{ sensor }}" role="tabpanel">
-                        <h2 class="mb-4">{{ sensor }} - Interactive Data View</h2>
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-3">
-                                <label class="form-label">Parameter:</label>
-                                <select id="{{ sensor }}-metric" class="form-select">
-                                    {% for p in info.params %}
-                                        <option value="{{ p }}">{{ p }}</option>
-                                    {% endfor %}
-                                </select>
+
+                <hr class="my-5">
+
+                <h2 class="text-center mb-4">Full History - Overview</h2>
+                <div class="row">
+                    {% for sensor in sensors %}
+                        <div class="col-lg-6 col-md-6 col-sm-12">
+                            <h4 class="text-center">{{ sensor }} - Full Dataset</h4>
+                            <div id="{{ sensor }}-total-loading" class="chart-container" style="position: relative;">
+                                <div class="spinner"></div>
+                                <div class="loading-text">Loading history...</div>
                             </div>
-                            
-                            <div class="col-md-3">
-                                <label class="form-label">Start Date:</label>
-                                <input type="date" id="{{ sensor }}-start-date" class="form-control">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label">Start Time:</label>
-                                <input type="time" id="{{ sensor }}-start-time" class="form-control" step="60">
-                            </div>
-                            
-                            <div class="col-md-3">
-                                <label class="form-label">End Date:</label>
-                                <input type="date" id="{{ sensor }}-end-date" class="form-control">
-                            </div>
-                            <div class="col-md-2">
-                                <label class="form-label">End Time:</label>
-                                <input type="time" id="{{ sensor }}-end-time" class="form-control" step="60">
+                            <div class="chart-container" style="display:none;" id="{{ sensor }}-total-container">
+                                <canvas id="{{ sensor }}-total-chart"></canvas>
                             </div>
                         </div>
-                        
-                        <div class="mb-4">
-                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-3">Refresh</button>
-                            <button onclick="downloadInputRange('{{ sensor }}')" class="btn btn-info me-3">Download Input Range CSV</button>
-                            <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary">Last 24 Hours</button>
-                        </div>
-                        
-                        <div id="{{ sensor }}-detailed-loading" class="chart-container mt-4" style="position: relative; display: block;">
-                            <div class="spinner"></div>
-                            <div class="loading-text">Loading data...</div>
-                        </div>
-                        
-                        <div class="chart-container mt-4" style="display:none;" id="{{ sensor }}-detailed-container">
-                            <canvas id="{{ sensor }}-detailed-chart"></canvas>
-                        </div>
-                    </div>
-                {% endfor %}
+                    {% endfor %}
+                </div>
             </div>
-        </div>
-    </div>    
 
-    <!-- Educator Mode Content -->
-    <div id="educator-content" style="display: none;">
-        <div class="container-fluid mt-4">
-            <div class="row">
-                <!-- Main plotting area (left) -->
-                <div class="col-md-9" id="plot-area">
-                    <h2 class="text-center text-white mb-4">Custom Dashboard</h2>
-                    <div id="charts-grid" style="display: flex; flex-wrap: wrap; justify-content: center;"></div>
-                </div>
+            <!-- PER-SENSOR DETAILED TABS -->
+            {% for sensor, info in sensors.items() %}
+                <div class="tab-pane fade" id="{{ sensor }}" role="tabpanel">
+                    <h2 class="mb-4">{{ sensor }} - Interactive Data View</h2>
 
-                <!-- Right sidebar panel -->
-                <div class="col-md-3">
-                    <div class="educator-panel">
-                        <h4 class="text-white mb-4">Build Your Dashboard</h4>
-
-                        <!-- Sensor Selection -->
-                        <div class="mb-4">
-                            <label class="text-orange">Select Sensors & Parameters</label>
-                            <div id="sensor-list">
-                                {% for sensor in sensors %}
-                                    <div class="form-check">
-                                        <input class="form-check-input sensor-checkbox" type="checkbox" value="{{ sensor }}" id="sensor-{{ sensor }}">
-                                        <label class="form-check-label text-white" for="sensor-{{ sensor }}">{{ sensor }}</label>
-                                        <div class="nested-list" id="params-{{ sensor }}" style="display: none;">
-                                            {% for p in sensors[sensor].params %}
-                                                <div class="form-check">
-                                                    <input class="form-check-input param-checkbox" type="checkbox" value="{{ p }}" data-sensor="{{ sensor }}">
-                                                    <label class="form-check-label text-white">{{ p }}</label>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
+                    <!-- INPUT SECTION: Controls & Parameters -->
+                    <div class="row mb-3 align-items-end">
+                        <div class="col-md-3">
+                            <label class="form-label">Parameter</label>
+                            <select id="{{ sensor }}-metric" class="form-select">
+                                {% for p in info.params %}
+                                    <option value="{{ p }}">{{ p }}</option>
                                 {% endfor %}
-                            </div>
+                            </select>
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Start Date</label>
+                            <input type="date" id="{{ sensor }}-start-date" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Start Time</label>
+                            <input type="time" id="{{ sensor }}-start-time" class="form-control" step="60">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">End Date</label>
+                            <input type="date" id="{{ sensor }}-end-date" class="form-control">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">End Time</label>
+                            <input type="time" id="{{ sensor }}-end-time" class="form-control" step="60">
+                        </div>
+                    </div>
 
-                        <!-- Chart Type -->
-                        <div class="mb-4">
-                            <label class="text-orange">Chart Type</label>
-                            <select id="chart-type" class="form-select">
-                                <option value="line">Line</option>
-                                <option value="scatter">Scatter</option>
-                                <option value="bar">Bar</option>
-                                <option value="radar">Radar</option>
-                                <option value="polarArea">Polar Area</option>
-                                <option value="pie">Pie</option>
-                                <option value="doughnut">Doughnut</option>
+                    <!-- CONTROLS -->
+                    <div class="mb-4 d-flex justify-content-between align-items-center">
+                        <div>
+                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
+                            <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
+                            <button onclick="downloadInputRange('{{ sensor }}')" class="btn btn-info">Download CSV</button>
+                        </div>
+                      
+                        <div class="form-group d-inline-block ms-3">
+                            <label class="form-label me-2" style="color: orange;">Missing handling:</label>
+                            <select id="{{ sensor }}-missing-mode" class="form-select d-inline-block" style="width: 160px;">
+                                <option value="interpolate" selected>Interpolate (smooth)</option>
+                                <!-- <option value="clip0">Clip to zero</option> -->
+                                <option value="discrete">Discrete (no connect)</option>
                             </select>
                         </div>
 
-                        <!-- Time Range (Optional) -->
-                        <div class="mb-4">
-                            <label class="text-orange">Time Range (Optional)</label>
-                            <input type="date" id="global-start-date" class="form-control mb-2">
-                            <input type="time" id="global-start-time" class="form-control mb-2" step="60">
-                            <input type="date" id="global-end-date" class="form-control mb-2">
-                            <input type="time" id="global-end-time" class="form-control" step="60">
-                            <small class="text-white">Leave blank for all available data</small>
-                        </div>
+                    </div>
 
-                        <!-- Buttons -->
-                        <button onclick="addPlot()" class="btn btn-success mb-2 w-100">Add Plot</button>
-                        <button onclick="saveTemplate()" class="btn btn-warning mb-2 w-100">Save Template</button>
-                        <button onclick="loadTemplate()" class="btn btn-info mb-2 w-100">Load Template</button>
-                        <button onclick="printScreen()" class="btn btn-secondary w-100">Print Screen</button>
+                    <!-- OUTPUT SECTION: Chart -->
+                    <div id="{{ sensor }}-detailed-loading" class="chart-container mt-4" style="position: relative;">
+                        <div class="spinner"></div>
+                        <div class="loading-text">Loading data...</div>
+                    </div>
+                    <div class="chart-container mt-4" style="display:none;" id="{{ sensor }}-detailed-container">
+                        <canvas id="{{ sensor }}-detailed-chart"></canvas>
                     </div>
                 </div>
-            </div>
+            {% endfor %}
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script>    
-        const sensors = {{ sensors|tojson }};
-        let educatorMode = false;
-        let charts = {};
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const sensors = {{ sensors|tojson }};
+    let charts = {};
+    let fullSensorData = {};  // Will store { sensor: [full decimated entries] }
+    // ─────────────────────────────────────────────────────────────
+    // 1. CHART INITIALIZATION FUNCTIONS
+    // ─────────────────────────────────────────────────────────────
 
-        function initLiveChart(canvasId, data, sensorName) {
-            const params = sensors[sensorName].params;
-            const colors = sensors[sensorName].colors;
-            const datasets = params.map((p, i) => ({
-                label: p,
-                data: data.map(d => ({ x: d.timestamp, y: d[p] || null })),
-                borderColor: colors[i],
-                backgroundColor: colors[i] + '40',
-                tension: 0.3,
-                pointRadius: 0,
-                fill: false
-            }));
+    function initLiveChart(canvasId, data, sensorName) {
+        const params = sensors[sensorName].params;
+        const colors = sensors[sensorName].colors;
+        const datasets = params.map((p, i) => ({
+            label: p,
+            data: data.map(d => ({ x: d.timestamp, y: d[p] || null })),
+            borderColor: colors[i],
+            backgroundColor: colors[i] + '40',
+            tension: 0.3,
+            pointRadius: 0,
+            fill: false
+        }));
 
-            return new Chart(document.getElementById(canvasId), {
-                type: 'line',
-                data: { datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
+        return new Chart(document.getElementById(canvasId), {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    tooltip: {
                         mode: 'index',
-                        intersect: false
-                    },
-                    plugins: {
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            titleColor: 'orange',
-                            bodyColor: 'white',
-                            borderColor: 'orange',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toFixed(2);
-                                    }
-                                    return label;
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'orange',
+                        bodyColor: 'white',
+                        borderColor: 'orange',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ': ';
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toFixed(2);
                                 }
+                                return label;
                             }
-                        },
-                        legend: {
-                            labels: { color: 'white' }
                         }
                     },
-                    scales: {
-                        x: {
-                            type: 'time',
-                            time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } },
-                            grid: { color: 'rgba(255,255,255,0.2)' },
-                            ticks: { color: 'white' }
-                        },
-                        y: {
-                            grid: { color: 'rgba(255,255,255,0.2)' },
-                            ticks: { color: 'white' }
-                        }
+                    legend: {
+                        labels: { color: 'white' }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } },
+                        grid: { color: 'rgba(255,255,255,0.2)' },
+                        ticks: { color: 'white' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.2)' },
+                        ticks: { color: 'white' }
                     }
                 }
-            });
-        }
-
-        function initDecimatedChart(canvasId, data, sensorName) {
-            const params = sensors[sensorName].params;
-            const colors = sensors[sensorName].colors;
-            const labels = data.map(d => d.timestamp);
-            const datasets = params.map((p, i) => ({
-                label: p,
-                data: data.map(d => d[p] || null),
-                borderColor: colors[i],
-                tension: 0.2,
-                pointRadius: 0,
-                fill: false
-            }));
-
-            return new Chart(document.getElementById(canvasId), {
-                type: 'line',
-                data: { labels, datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false
-                    },
-                    plugins: {
-                        tooltip: {
-                            mode: 'index',
-                            intersect: false,
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            titleColor: 'orange',
-                            bodyColor: 'white',
-                            borderColor: 'orange',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) label += ': ';
-                                    if (context.parsed.y !== null) {
-                                        label += context.parsed.y.toFixed(2);
-                                    }
-                                    return label;
-                                }
-                            }
-                        },
-                        legend: { labels: { color: 'orange' } }
-                    },
-                    scales: {
-                        x: {
-                            ticks: {
-                                color: 'orange',
-                                maxTicksLimit: 20,
-                                callback: function(value, index) {
-                                    if (labels.length === 0) return '';
-                                    const date = new Date(labels[index]);
-                                    const prevDate = index > 0 ? new Date(labels[index-1]) : null;
-                                    if (index === 0 || (prevDate && date.getDate() !== prevDate.getDate())) {
-                                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                                    }
-                                    if (date.getHours() % 6 === 0 && (!prevDate || date.getHours() !== prevDate.getHours())) {
-                                        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                                    }
-                                    return '';
-                                }
-                            },
-                            grid: { color: 'rgba(255,255,255,0.2)' }
-                        },
-                        y: {
-                            grid: { color: 'rgba(255,255,255,0.2)' },
-                            ticks: { color: 'orange' }
-                        }
-                    }
-                }
-            });
-        }
-
-        function loadMainData(sensor) {
-            document.getElementById(`${sensor}-live-loading`).style.display = 'block';
-            document.getElementById(`${sensor}-live-container`).style.display = 'none';
-            fetch(`/last_2h_data/${sensor}`)
-                .then(r => r.json())
-                .then(data => {
-                    charts[`${sensor}-live`] = initLiveChart(`${sensor}-live-chart`, data, sensor);
-                    document.getElementById(`${sensor}-live-loading`).style.display = 'none';
-                    document.getElementById(`${sensor}-live-container`).style.display = 'block';
-                });
-
-            document.getElementById(`${sensor}-total-loading`).style.display = 'block';
-            document.getElementById(`${sensor}-total-container`).style.display = 'none';
-            fetch(`/decimated_data/${sensor}`)
-                .then(r => r.json())
-                .then(data => {
-                    charts[`${sensor}-total`] = initDecimatedChart(`${sensor}-total-chart`, data, sensor);
-                    document.getElementById(`${sensor}-total-loading`).style.display = 'none';
-                    document.getElementById(`${sensor}-total-container`).style.display = 'block';
-                });
-        }
-
-        function updateLive(sensor) {
-            fetch(`/last_data/${sensor}`)
-                .then(r => r.json())
-                .then(newData => {
-                    if (newData && newData.timestamp) {
-                        const chart = charts[`${sensor}-live`];
-                        if (!chart) return;
-                        const params = sensors[sensor].params;
-                        chart.data.datasets.forEach((ds, i) => {
-                            ds.data.push({ x: newData.timestamp, y: newData[params[i]] || null });
-                        });
-                        chart.update('quiet');
-                    }
-                });
-        }
-
-        Object.keys(sensors).forEach(loadMainData);
-        setInterval(() => Object.keys(sensors).forEach(updateLive), 10000);
-
-        function loadCustomRangeData(sensor) {
-            const metric = document.getElementById(`${sensor}-metric`).value;
-            
-            const startDate = document.getElementById(`${sensor}-start-date`).value;
-            const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
-            const endDate = document.getElementById(`${sensor}-end-date`).value;
-            const endTime = document.getElementById(`${sensor}-end-time`).value || '23:59';
-            
-            if (!startDate || !endDate) {
-                alert("Please select both start and end dates");
-                return;
             }
-            
-            const start = `${startDate} ${startTime}:00`;
-            const end = `${endDate} ${endTime}:59`;
-            
-            document.getElementById(`${sensor}-detailed-loading`).style.display = 'block';
-            document.getElementById(`${sensor}-detailed-container`).style.display = 'none';
-            
-            fetch(`/range_data/${sensor}?start=${start}&end=${end}`)
-                .then(r => r.json())
-                .then(data => {
-                    const labels = data.map(d => d.timestamp);
-                    const values = data.map(d => d[metric] || null);
-                    const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
-                    
-                    if (charts[`${sensor}-detailed`]) {
-                        charts[`${sensor}-detailed`].destroy();
-                    }
-                    
-                    charts[`${sensor}-detailed`] = new Chart(document.getElementById(`${sensor}-detailed-chart`), {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [{
-                                label: metric,
-                                data: values,
-                                borderColor: color,
-                                backgroundColor: color + '40',
-                                tension: 0.2,
-                                pointRadius: 1,
-                                fill: false
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            interaction: {
-                                mode: 'index',
-                                intersect: false
-                            },
-                            plugins: {
-                                zoom: {
-                                    pan: {
-                                        enabled: true,
-                                        mode: 'x',
-                                        modifierKey: 'ctrl'
-                                    },
-                                    zoom: {
-                                        wheel: { enabled: true },
-                                        pinch: { enabled: true },
-                                        mode: 'x'
-                                    }
-                                },
-                                legend: { labels: { color: 'orange' } },
-                                tooltip: {
-                                    mode: 'index',
-                                    intersect: false
+        });
+    }
+
+    function initDecimatedChart(canvasId, data, sensorName) {
+        const params = sensors[sensorName].params;
+        const colors = sensors[sensorName].colors;
+        const labels = data.map(d => d.timestamp);
+        const datasets = params.map((p, i) => ({
+            label: p,
+            data: data.map(d => d[p] || null),
+            borderColor: colors[i],
+            tension: 0.2,
+            pointRadius: 0,
+            fill: false
+        }));
+
+        return new Chart(document.getElementById(canvasId), {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: 'orange',
+                        bodyColor: 'white',
+                        borderColor: 'orange',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) label += ': ';
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toFixed(2);
                                 }
-                            },
-                            scales: {
-                                x: {
-                                    type: 'time',
-                                    grid: { color: 'rgba(255,255,255,0.2)' },
-                                    ticks: { color: 'white' }
-                                },
-                                y: {
-                                    grid: { color: 'rgba(255,255,255,0.2)' },
-                                    ticks: { color: 'white' }
-                                }
+                                return label;
                             }
                         }
+                    },
+                    legend: { labels: { color: 'orange' } }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: 'orange',
+                            maxTicksLimit: 20,
+                            callback: function(value, index) {
+                                if (labels.length === 0) return '';
+                                const date = new Date(labels[index]);
+                                const prevDate = index > 0 ? new Date(labels[index-1]) : null;
+                                if (index === 0 || (prevDate && date.getDate() !== prevDate.getDate())) {
+                                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                }
+                                if (date.getHours() % 6 === 0 && (!prevDate || date.getHours() !== prevDate.getHours())) {
+                                    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                                }
+                                return '';
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,0.2)' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.2)' },
+                        ticks: { color: 'orange' }
+                    }
+                }
+            }
+        });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 2. MAIN DASHBOARD LOADING & LIVE UPDATES
+    // ─────────────────────────────────────────────────────────────
+
+    function loadMainData(sensor) {
+        document.getElementById(`${sensor}-live-loading`).style.display = 'block';
+        document.getElementById(`${sensor}-live-container`).style.display = 'none';
+        fetch(`/last_2h_data/${sensor}`)
+            .then(r => r.json())
+            .then(data => {
+                charts[`${sensor}-live`] = initLiveChart(`${sensor}-live-chart`, data, sensor);
+                document.getElementById(`${sensor}-live-loading`).style.display = 'none';
+                document.getElementById(`${sensor}-live-container`).style.display = 'block';
+            })
+            .catch(err => console.error("Live data load failed:", err));
+
+        document.getElementById(`${sensor}-total-loading`).style.display = 'block';
+        document.getElementById(`${sensor}-total-container`).style.display = 'none';
+        fetch(`/decimated_data/${sensor}`)
+            .then(r => r.json())
+            .then(data => {
+                charts[`${sensor}-total`] = initDecimatedChart(`${sensor}-total-chart`, data, sensor);
+                document.getElementById(`${sensor}-total-loading`).style.display = 'none';
+                document.getElementById(`${sensor}-total-container`).style.display = 'block';
+            })
+            .catch(err => console.error("Total data load failed:", err));
+    }
+
+    function updateLive(sensor) {
+        fetch(`/last_data/${sensor}`)
+            .then(r => r.json())
+            .then(newData => {
+                if (newData && newData.timestamp) {
+                    const chart = charts[`${sensor}-live`];
+                    if (!chart) return;
+                    const params = sensors[sensor].params;
+                    chart.data.datasets.forEach((ds, i) => {
+                        ds.data.push({ x: newData.timestamp, y: newData[params[i]] || null });
                     });
-                    
-                    document.getElementById(`${sensor}-detailed-loading`).style.display = 'none';
-                    document.getElementById(`${sensor}-detailed-container`).style.display = 'block';
-                    
-                    if (data.length > 0) {
-                        const maxTs = new Date(data[data.length - 1].timestamp).getTime();
-                        const minTs = maxTs - 24 * 60 * 60 * 1000;
-                        charts[`${sensor}-detailed`].zoomScale('x', { min: minTs, max: maxTs });
-                    }
-                })
-                .catch(err => {
-                    console.error(err);
-                    alert("Error loading data");
-                    document.getElementById(`${sensor}-detailed-loading`).style.display = 'none';
-                });
+                    chart.update('quiet');
+                }
+            })
+            .catch(err => console.error("Live update failed:", err));
+    }
+
+    // Initial load + periodic live updates
+    Object.keys(sensors).forEach(loadMainData);
+    setInterval(() => Object.keys(sensors).forEach(updateLive), 10000);
+
+    // ─────────────────────────────────────────────────────────────
+    // 3. DETAILED SENSOR TAB - INPUT / FETCHING
+    // ─────────────────────────────────────────────────────────────
+
+
+    function loadCustomRangeData(sensor) {
+        const startDate = document.getElementById(`${sensor}-start-date`).value;
+        const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
+        const endDate   = document.getElementById(`${sensor}-end-date`).value;
+        const endTime   = document.getElementById(`${sensor}-end-time`).value || '23:59';
+
+        if (!startDate || !endDate) {
+            alert("Please select both start and end dates");
+            return;
         }
 
-        function resetToLast24h(sensor) {
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById(`${sensor}-start-date`).value = today;
-            document.getElementById(`${sensor}-start-time`).value = '00:00';
-            document.getElementById(`${sensor}-end-date`).value = today;
-            document.getElementById(`${sensor}-end-time`).value = '23:59';
+        const startStr = `${startDate} ${startTime}:00`;
+        const endStr   = `${endDate} ${endTime}:59`;
+
+        const startTs = new Date(startStr).getTime();
+        const endTs   = new Date(endStr).getTime();
+
+        const fullData = fullSensorData[sensor];
+
+        if (!fullData || fullData.length === 0) {
+            document.getElementById(`${sensor}-detailed-loading`).innerHTML =
+                '<div class="loading-text text-warning">No full data loaded yet</div>';
+            return;
+        }
+
+        // Filter locally
+        const filtered = fullData.filter(d => {
+            const ts = new Date(d.timestamp).getTime();
+            return ts >= startTs && ts <= endTs;
+        });
+
+        const loading = document.getElementById(`${sensor}-detailed-loading`);
+        loading.style.display = 'block';
+
+        if (filtered.length === 0) {
+            // Warning + show full instead
+            alert("No data in selected range — showing full available dataset instead");
+            processAndDisplayDetailedData(sensor, fullData);
+        } else {
+            processAndDisplayDetailedData(sensor, filtered);
+        }
+
+        loading.style.display = 'none';
+    }
+
+    function resetToLast24h(sensor) {
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById(`${sensor}-start-date`).value = today;
+        document.getElementById(`${sensor}-start-time`).value = '00:00';
+        document.getElementById(`${sensor}-end-date`).value = today;
+        document.getElementById(`${sensor}-end-time`).value = '23:59';
+        loadCustomRangeData(sensor);
+    }
+
+
+    // New function: Load full range info, prefill dates, then load full data
+    async function initializeSensorTab(sensor) {
+        const loading = document.getElementById(`${sensor}-detailed-loading`);
+        loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full range...</div>';
+
+        try {
+            const res = await fetch(`/sensor_range/${sensor}`);
+            if (!res.ok) throw new Error("Range fetch failed");
+
+            const info = await res.json();
+
+            if (!info.start || !info.end) {
+                loading.innerHTML = '<div class="loading-text text-warning">No data available</div>';
+                return;
+            }
+
+            // Prefill date/time inputs with actual first/last timestamp
+            const startDt = new Date(info.start);
+            const endDt   = new Date(info.end);
+
+            document.getElementById(`${sensor}-start-date`).value = startDt.toISOString().split('T')[0];
+            document.getElementById(`${sensor}-start-time`).value = startDt.toTimeString().slice(0, 5);
+            document.getElementById(`${sensor}-end-date`).value   = endDt.toISOString().split('T')[0];
+            document.getElementById(`${sensor}-end-time`).value   = endDt.toTimeString().slice(0, 5);
+
+            // Now load the full range
             loadCustomRangeData(sensor);
+        } catch (err) {
+            console.error("Initialize tab error:", err);
+            loading.innerHTML = '<div class="loading-text text-danger">Failed to load range</div>';
         }
-
-        function downloadVisibleRange(sensor) {
-            const chart = charts[`${sensor}-detailed`];
-            if (!chart) {
-                alert("No chart loaded yet");
-                return;
-            }
-
-            const metric = document.getElementById(`${sensor}-metric`).value;
-
-            const minTs = new Date(chart.scales.x.min);
-            const maxTs = new Date(chart.scales.x.max);
-
-            const start_str = minTs.toISOString().slice(0, 16).replace('T', ' ');
-            const end_str = maxTs.toISOString().slice(0, 16).replace('T', ' ');
-
-            window.location.href = `/download_range/${sensor}?start=${encodeURIComponent(start_str)}&end=${encodeURIComponent(end_str)}&param=${metric}`;
-        }
-
-        function downloadInputRange(sensor) {
-            const startDate = document.getElementById(`${sensor}-start-date`).value;
-            const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
-            const endDate = document.getElementById(`${sensor}-end-date`).value;
-            const endTime = document.getElementById(`${sensor}-end-time`).value || '23:59';
-            
-            if (!startDate || !endDate) {
-                alert("Please set start and end dates");
-                return;
-            }
-            
-            const start = `${startDate} ${startTime}`;
-            const end = `${endDate} ${endTime}`;
-            
-            window.location.href = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-        }
-
-        document.getElementById('myTab').addEventListener('shown.bs.tab', e => {
-            const target = e.target.getAttribute('data-bs-target').substring(1);
-            if (target !== 'main' && !charts[`${target}-detailed`]) {
-                resetToLast24h(target);
-            }
-        });
-
-            // Default mode: Researcher (false = Researcher, true = Educator)
-        
-      
-        window.onload = function() {
-            if (localStorage.getItem('educatorMode') === 'true') {
-                educatorMode = true;
-                document.getElementById('mode-toggle').checked = true;
-                
-            }
-        }
-
-        // Save preference
-        document.getElementById('mode-toggle').addEventListener('change', function() {
-            localStorage.setItem('educatorMode', educatorMode);
-        });
-
-        
-        let plotCounter = 0;
-
-        
-        // Show nested params when sensor checked
-        document.querySelectorAll('.sensor-checkbox').forEach(cb => {
-            cb.addEventListener('change', function() {
-                const paramsDiv = document.getElementById('params-' + this.value);
-                paramsDiv.style.display = this.checked ? 'block' : 'none';
-            });
-        });
-
-
-        function destroyAllCharts() {
-        Object.keys(charts).forEach(key => {
-            if (charts[key]) {
-                charts[key].destroy();
-                charts[key] = null;
-            }
-        });
-        charts = {};
     }
 
-    function toggleMode() {
-        educatorMode = !educatorMode;
-        document.getElementById('researcher-content').style.display = educatorMode ? 'none' : 'block';
-        document.getElementById('educator-content').style.display = educatorMode ? 'block' : 'none';
+    // ─────────────────────────────────────────────────────────────
+    // 4. DETAILED SENSOR TAB - PROCESSING & DISPLAY (OUTPUT)
+    // ─────────────────────────────────────────────────────────────
 
-        destroyAllCharts();  // Destroy all charts on switch
+    function processAndDisplayDetailedData(sensor, data) {
+        const loading = document.getElementById(`${sensor}-detailed-loading`);
+        const container = document.getElementById(`${sensor}-detailed-container`);
 
-        if (!educatorMode) {
-            Object.keys(sensors).forEach(loadMainData);  // Reload Researcher charts
-        }
-
-        localStorage.setItem('educatorMode', educatorMode);
-    }
-
-    document.querySelectorAll('.sensor-checkbox').forEach(cb => {
-        cb.addEventListener('change', function() {
-            const paramsDiv = document.getElementById('params-' + this.value);
-            paramsDiv.style.display = this.checked ? 'block' : 'none';
-        });
-    });
-
-    function getSelectedData() {
-        const selected = [];
-        document.querySelectorAll('.param-checkbox:checked').forEach(cb => {
-            selected.push({
-                sensor: cb.dataset.sensor,
-                param: cb.value
-            });
-        });
-        return selected;
-    }
-
-    function addPlot() {
-        const selected = getSelectedData();
-        if (selected.length === 0) {
-            alert("Select at least one parameter");
+        if (!data || data.length === 0) {
+            loading.innerHTML = '<div class="loading-text text-warning">No data in selected range</div>';
             return;
         }
 
-        const chartType = document.getElementById('chart-type').value;
-        const startDate = document.getElementById('global-start-date').value;
-        const startTime = document.getElementById('global-start-time').value || '00:00';
-        const endDate = document.getElementById('global-end-date').value;
-        const endTime = document.getElementById('global-end-time').value || '23:59';
+        const metric = document.getElementById(`${sensor}-metric`).value;
+        const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
 
-        let query = '';
-        if (startDate && endDate) {
-            const startStr = `${startDate} ${startTime}:00`;
-            const endStr = `${endDate} ${endTime}:59`;
-            query = `?start=${encodeURIComponent(startStr)}&end=${encodeURIComponent(endStr)}`;
-        }
+        const mode = document.getElementById(`${sensor}-missing-mode`)?.value || 'interpolate';
 
-        const plotId = 'plot-' + plotCounter++;
-        const canvasId = 'canvas-' + plotId;
+        let chartDataPoints = data.map(d => ({
+            x: d.timestamp,
+            y: d[metric] !== undefined && d[metric] !== null ? d[metric] : null
+        }));
 
-        const chartBox = document.createElement('div');
-        chartBox.className = 'chart-box';
-        chartBox.id = plotId;
-        chartBox.innerHTML = `
-            <canvas id="${canvasId}"></canvas>
-            <button onclick="this.parentElement.remove(); delete charts['${canvasId}']" style="position: absolute; top: 5px; right: 5px;" class="btn btn-danger btn-sm">X</button>
-        `;
+        let chartType = 'line';
+        let tension = 0.3;
+        let spanGaps = true;
+        let pointRadius = 2;
+        let borderWidth = 2;
+        let stepped = false;
 
-        document.getElementById('charts-grid').appendChild(chartBox);
-
-        interact('#' + plotId)
-            .draggable({
-                inertia: true,
-                autoScroll: true,
-                listeners: {
-                    move(event) {
-                        const target = event.target;
-                        const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-                        const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
-                        target.style.transform = `translate(${x}px, ${y}px)`;
-                        target.setAttribute('data-x', x);
-                        target.setAttribute('data-y', y);
+        if (mode === 'clip0') {
+            // Insert one 0 point after each real point to force drop (minimal extra points)
+            const enhanced = [];
+            for (let i = 0; i < chartDataPoints.length; i++) {
+                enhanced.push(chartDataPoints[i]);
+                // If next point exists and there's a gap, insert 0 just before it
+                if (i < chartDataPoints.length - 1) {
+                    const currTs = new Date(chartDataPoints[i].x).getTime();
+                    const nextTs = new Date(chartDataPoints[i+1].x).getTime();
+                    if (nextTs - currTs > 60000) {  // gap > 1 min
+                        const midTs = new Date((currTs + nextTs) / 2).toISOString();
+                        enhanced.push({ x: midTs, y: 0 });  // drop to zero in middle of gap
                     }
                 }
-            });
+            }
+            chartDataPoints = enhanced;
 
-        const promises = selected.map(item => 
-            fetch(`/range_data/${item.sensor}${query}`).then(r => r.json())
-        );
+            tension = 0;
+            spanGaps = true;
+            stepped = true;  // ← This creates flat plateaus + sharp vertical drops to zero
+        } else if (mode === 'discrete') {
+            chartType = 'bar';
+            tension = 0;
+            spanGaps = false;
+            pointRadius = 0;
+            borderWidth = 3;
+        }
 
-        Promise.all(promises).then(datasets => {
-            const chartDatasets = selected.map((item, i) => {
-                const sensorData = datasets[i];
-                return {
-                    label: `${item.sensor} - ${item.param}`,
-                    data: sensorData.map(d => ({ x: d.timestamp, y: d[item.param] || null })),
-                    borderColor: sensors[item.sensor].colors[sensors[item.sensor].params.indexOf(item.param)],
-                    backgroundColor: sensors[item.sensor].colors[sensors[item.sensor].params.indexOf(item.param)] + '40',
-                    tension: 0.3,
-                    pointRadius: 2
-                };
-            });
+        if (charts[`${sensor}-detailed`]) {
+            charts[`${sensor}-detailed`].destroy();
+        }
 
-            charts[canvasId] = new Chart(document.getElementById(canvasId), {
-                type: chartType,
-                data: { datasets: chartDatasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { labels: { color: 'white' } },
-                        zoom: {
-                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-                            pan: { enabled: true, mode: 'x' }
-                        }
+        const chart = new Chart(document.getElementById(`${sensor}-detailed-chart`), {
+            type: chartType,
+            data: {
+                datasets: [{
+                    label: metric,
+                    data: chartDataPoints,
+                    borderColor: color,
+                    backgroundColor: mode === 'discrete' ? color + '80' : color + '40',
+                    tension: tension,
+                    spanGaps: spanGaps,
+                    pointRadius: pointRadius,
+                    borderWidth: borderWidth,
+                    fill: false,
+                    stepped: stepped  // ← Key for clip-to-zero: makes horizontal flats + vertical drops
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: 'white' } },
+                    zoom: {
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                        pan: { enabled: true, mode: 'x' }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { parser: 'yyyy-MM-dd HH:mm:ss.SSSSSS' },
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.2)' }
                     },
-                    scales: (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') ? {} : {
-                        x: { type: 'time', ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } },
-                        y: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.2)' } }
+                    y: {
+                        min: mode === 'clip0' ? 0 : undefined,          // Force Y to include 0
+                        suggestedMin: mode === 'clip0' ? 0 : undefined, // Extra safety
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.2)' }
                     }
                 }
-            });
-        }).catch(err => {
-            console.error("Error adding plot:", err);
-            alert("Failed to load data for plot");
+            }
         });
+
+        charts[`${sensor}-detailed`] = chart;
+
+        // Auto-scale
+        if (data.length > 0) {
+            const times = data.map(d => new Date(d.timestamp).getTime());
+            const minT = Math.min(...times);
+            const maxT = Math.max(...times);
+            const padding = (maxT - minT) * 0.03 || 3600000;
+
+            chart.options.scales.x.min = new Date(minT - padding);
+            chart.options.scales.x.max = new Date(maxT + padding);
+            chart.update();
+        }
+
+        loading.style.display = 'none';
+        container.style.display = 'block';
+    }
+        
+
+    function densifyWithZeros(data, metric, startTs, endTs, intervalMs = 60000) {  // 1 min default
+        if (data.length === 0) return [];
+
+        const result = [];
+        let currentTs = startTs;
+
+        // Sort data by time just in case
+        const sorted = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        let dataIndex = 0;
+
+        while (currentTs <= endTs) {
+            const currentDate = new Date(currentTs);
+            const nextDataTs = dataIndex < sorted.length ? new Date(sorted[dataIndex].timestamp).getTime() : Infinity;
+
+            if (Math.abs(currentTs - nextDataTs) < intervalMs / 2) {
+                // Close enough → use real value
+                result.push({
+                    x: sorted[dataIndex].timestamp,
+                    y: sorted[dataIndex][metric] ?? 0
+                });
+                dataIndex++;
+            } else {
+                // Gap → force 0
+                result.push({
+                    x: currentDate.toISOString(),
+                    y: 0
+                });
+            }
+
+            currentTs += intervalMs;
+        }
+
+        return result;
     }
 
-    function printScreen() {
-        html2canvas(document.getElementById('educator-content')).then(canvas => {
-            const link = document.createElement('a');
-            link.download = 'simoc-dashboard-screenshot.png';
-            link.href = canvas.toDataURL();
-            link.click();
-        });
-    }
 
-    function saveTemplate() {
-        const template = {
-            selectedParams: getSelectedData(),
-            chartType: document.getElementById('chart-type').value,
-            startDate: document.getElementById('global-start-date').value,
-            startTime: document.getElementById('global-start-time').value,
-            endDate: document.getElementById('global-end-date').value,
-            endTime: document.getElementById('global-end-time').value
-        };
-        localStorage.setItem('educatorTemplate', JSON.stringify(template));
-        alert("Template saved!");
-    }
+    async function loadAndStoreFullData(sensor) {
+    const loading = document.getElementById(`${sensor}-detailed-loading`);
+    loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full history...</div>';
 
-    function loadTemplate() {
-        const saved = localStorage.getItem('educatorTemplate');
-        if (!saved) {
-            alert("No saved template found");
+    try {
+        const r = await fetch(`/decimated_data/${sensor}`);
+        if (!r.ok) throw new Error("Failed to load full data");
+
+        const data = await r.json();
+        console.log("Full data length:", data.length);
+        console.log("First entry:", data[0]);
+        console.log("Last entry:", data[data.length-1]);
+        if (!data || data.length === 0) {
+            loading.innerHTML = '<div class="loading-text text-warning">No data available for this sensor</div>';
+            return null;
+        }
+
+        // Store full data
+        fullSensorData[sensor] = data;
+
+        // Extract real first/last timestamp for prefill
+        const times = data.map(d => new Date(d.timestamp).getTime());
+        const minTime = new Date(Math.min(...times));
+        const maxTime = new Date(Math.max(...times));
+
+        // Prefill inputs
+        document.getElementById(`${sensor}-start-date`).value = minTime.toISOString().split('T')[0];
+        document.getElementById(`${sensor}-start-time`).value = minTime.toTimeString().slice(0,5);
+        document.getElementById(`${sensor}-end-date`).value   = maxTime.toISOString().split('T')[0];
+        document.getElementById(`${sensor}-end-time`).value   = maxTime.toTimeString().slice(0,5);
+
+        // Display full data
+        processAndDisplayDetailedData(sensor, data);
+
+        return data;
+    } catch (err) {
+        console.error("Full data load error:", err);
+        loading.innerHTML = '<div class="loading-text text-danger">Failed to load full history</div>';
+        return null;
+    }
+}
+
+    // ─────────────────────────────────────────────────────────────
+    // 5. DOWNLOAD FUNCTION
+    // ─────────────────────────────────────────────────────────────
+
+    function downloadInputRange(sensor) {
+        const startDate = document.getElementById(`${sensor}-start-date`).value;
+        const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
+        const endDate   = document.getElementById(`${sensor}-end-date`).value;
+        const endTime   = document.getElementById(`${sensor}-end-time`).value || '23:59';
+
+        if (!startDate || !endDate) {
+            alert("Please set start and end dates first");
             return;
         }
-        const template = JSON.parse(saved);
-        console.log("Loaded template:", template);
-        // Future: auto-check boxes, set chart type, dates, and add plots
-        alert("Template loaded — see console for details. Auto-apply coming soon!");
-    }
 
-    window.addEventListener('load', () => {
-        if (localStorage.getItem('educatorMode') === 'true') {
-            educatorMode = true;
-            document.getElementById('mode-toggle').checked = true;
-            toggleMode();
-        }
-        Object.keys(sensors).forEach(loadMainData);
-    });
+        // Format exactly as backend expects (no seconds if not needed, but include if you have them)
+        const start = `${startDate} ${startTime}:00`;
+        const end   = `${endDate} ${endTime}:59`;
+
+        // Optional: Read missing mode (if backend supports it now or later)
+        // const missingMode = document.getElementById(`${sensor}-missing-mode`)?.value || 'na';
+
+        const url = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+
+        // Optional missing param if your backend already handles it
+        // const url = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&missing=${missingMode}`;
+
+        window.location.href = url;
+    }
+    // ─────────────────────────────────────────────────────────────
+    // EVENT LISTENERS & INITIALIZATION
+    // ─────────────────────────────────────────────────────────────
+
+    // Auto-load detailed chart on first tab open
+    // document.getElementById('myTab').addEventListener('shown.bs.tab', e => {
+    //     const target = e.target.getAttribute('data-bs-target').substring(1);
+    //     if (target !== 'main' && sensors[target] && !charts[`${target}-detailed`]) {
+    //         resetToLast24h(target);
+    //     }
+    // });
 
     document.getElementById('myTab').addEventListener('shown.bs.tab', e => {
         const target = e.target.getAttribute('data-bs-target').substring(1);
-        if (target !== 'main' && !charts[`${target}-detailed`]) {
-            resetToLast24h(target);
+        if (target !== 'main' && sensors[target] && !charts[`${target}-detailed`]) {
+            loadAndStoreFullData(target);  // ← New: loads full + prefills + displays
         }
     });
-    </script>
+    
+    // Reload chart when metric changes
+    document.querySelectorAll('[id$="-metric"]').forEach(select => {
+        select.addEventListener('change', function() {
+            const sensor = this.id.replace('-metric', '');
+            loadCustomRangeData(sensor);
+        });
+    });
+
+    document.querySelectorAll('[id$="-missing-mode"]').forEach(sel => {
+        sel.addEventListener('change', function() {
+            const sensor = this.id.replace('-missing-mode', '');
+            if (fullSensorData[sensor]) {
+                processAndDisplayDetailedData(sensor, fullSensorData[sensor]);
+            }
+        });
+    });
+
+    
+    // Page load
+    window.addEventListener('load', () => {
+        Object.keys(sensors).forEach(loadMainData);
+    });
+</script>
+
 </body>
 </html>

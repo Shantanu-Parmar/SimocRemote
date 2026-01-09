@@ -1,13 +1,16 @@
 # simoc_dashboard/routes.py
-from flask import render_template, request, jsonify, send_file, abort
+from flask import render_template, request, jsonify, send_file, abort, Response
 import io
 import datetime
 import pandas as pd
 import os
 import json
+import csv
 #from .utils import get_data_in_range, get_decimated_data, get_last_data
 from utils import get_data_in_range, get_decimated_data, get_last_data
 from utils import find_start_offset, find_end_offset  # Import missing functions
+
+
 def register_routes(app, sensors, log_dir):
     """
     Register all Flask routes for the dashboard.
@@ -109,6 +112,145 @@ def register_routes(app, sensors, log_dir):
             return jsonify([]), 500
 
         return jsonify(data)
+                        
+    @app.route('/sensor_range/<sensor>')
+    def sensor_range(sensor):
+        """Fast endpoint: returns min/max timestamp and approx count for a sensor."""
+        if sensor not in sensors:
+            return jsonify({"error": "Sensor not found"}), 404
+
+        filepath = os.path.join(log_dir, sensors[sensor]['file'])
+
+        if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
+            return jsonify({"start": None, "end": None, "count": 0})
+
+        try:
+            with open(filepath, 'r') as f:
+                # First line
+                first_line = f.readline().strip()
+                if not first_line:
+                    return jsonify({"start": None, "end": None, "count": 0})
+
+                first = json.loads(first_line)
+                start_ts = first.get('timestamp')
+
+                # Last line (efficient backward seek)
+                f.seek(0, os.SEEK_END)
+                pos = f.tell() - 1
+                while pos > 0:
+                    pos -= 1
+                    f.seek(pos)
+                    if f.read(1) == '\n':
+                        break
+                last_line = f.readline().strip()
+                last = json.loads(last_line) if last_line else first
+                end_ts = last.get('timestamp')
+
+                # Rough line count (fast approximation)
+                count = sum(1 for _ in open(filepath)) if start_ts else 0
+
+            return jsonify({
+                "start": start_ts,
+                "end": end_ts,
+                "count": count
+            })
+
+        except Exception as e:
+            app.logger.error(f"Error getting range for {sensor}: {e}")
+            return jsonify({"error": str(e)}), 500
+        
+
+    @app.route('/download_full/<sensor>')
+    def download_full(sensor):
+        """Download full CSV for a sensor - all parameters, missing as 'NA'"""
+        if sensor not in sensors:
+            abort(404)
+
+        filepath = os.path.join(log_dir, sensors[sensor]['file'])
+
+        if not os.path.exists(filepath):
+            abort(404, "Sensor file not found")
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header: timestamp + all params
+        params = sensors[sensor]['params']
+        headers = ['timestamp'] + params
+        writer.writerow(headers)
+
+        try:
+            with open(filepath, 'r') as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        row = [entry.get('timestamp', '')]
+                        for p in params:
+                            row.append(entry.get(p, 'NA'))  # ← NA for missing
+                        writer.writerow(row)
+                    except json.JSONDecodeError:
+                        continue  # skip bad lines
+        except Exception as e:
+            app.logger.error(f"CSV download error for {sensor}: {e}")
+            abort(500)
+
+        output.seek(0)
+
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={
+                "Content-Disposition": f"attachment; filename={sensor}_full_data.csv"
+            }
+        )
+
+
+    @app.route('/download_range/<sensor>')
+    def download_range(sensor):
+        if sensor not in sensors:
+            abort(404)
+
+        start_str = request.args.get('start')
+        end_str   = request.args.get('end')
+
+        if not start_str or not end_str:
+            abort(400, "Missing start or end parameter")
+
+        try:
+            start = datetime.datetime.strptime(start_str, '%Y-%m-%d %H:%M:%S')
+            end   = datetime.datetime.strptime(end_str, '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            abort(400, "Invalid date format")
+
+        filepath = os.path.join(log_dir, sensors[sensor]['file'])
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header: timestamp + all params
+        params = sensors[sensor]['params']
+        writer.writerow(['timestamp'] + params)
+
+        try:
+            data = get_data_in_range(filepath, start, end)  # Reuse your existing function!
+            for entry in data:
+                row = [entry.get('timestamp', '')]
+                for p in params:
+                    row.append(entry.get(p, 'NA'))  # Or '' / None — your choice
+                writer.writerow(row)
+        except Exception as e:
+            app.logger.error(f"CSV error for {sensor}: {e}")
+            abort(500)
+
+        output.seek(0)
+
+        return Response(
+            output.getvalue(),
+            mimetype='text/csv',
+            headers={"Content-Disposition": f"attachment; filename={sensor}_data_{start_str}_to_{end_str}.csv"}
+        )
 
     @app.route('/')
     def index():
