@@ -8,12 +8,22 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
+        @font-face {
+            font-family: 'NasalizationRg';
+            src: url('/static/fonts/nasalization-rg-webfont.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;   /* ← shows fallback font immediately while loading */
+        }
         body { 
             background: url('/static/BKG.png') no-repeat center center fixed; 
             background-size: cover; 
             color: orange; 
             margin: 0; padding: 0; position: relative;
         }
+        #main .row:first-child ~ * {
+                display: none !important;
+            }
         body::before {
             content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.15); z-index: -1;
@@ -22,8 +32,9 @@
             background-color: rgba(0, 0, 0, 0.8); padding: 15px 20px; display: flex; align-items: center; 
             backdrop-filter: blur(5px);
         }
+        
         .top-bar img { height: 60px; margin-right: 20px; }
-        .top-bar span { color: orange; font-size: 32px; font-weight: bold; }
+        .top-bar span { color: rgb(255, 255, 255); font-size: 32px; font-weight: bold; font-family: 'NasalizationRg', Arial, Helvetica, sans-serif;  /* fallback */}
         .nav-tabs { background-color: rgba(0, 0, 0, 0.7); border: none; backdrop-filter: blur(5px); }
         .nav-tabs .nav-link { color: orange; border: none; }
         .nav-tabs .nav-link.active { color: orange; background: transparent; border-bottom: 3px solid orange; }
@@ -44,6 +55,7 @@
         .btn-warning:hover { background-color: #ffaa00; border-color: #ffaa00; }
         .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
         hr { border-color: rgba(255,165,0,0.3); margin: 60px 0; }
+
     </style>
 </head>
 <body>
@@ -66,26 +78,25 @@
         <div class="tab-content" id="myTabContent">
             <!-- MAIN TAB (Live + Overview) -->
             <div class="tab-pane fade show active" id="main" role="tabpanel">
-                <h2 class="text-center mb-4 mt-4">Last 2 Hours - Live View</h2>
                 <div class="row">
                     {% for sensor in sensors %}
                         <div class="{{ live_col_class }}">
-                            <h4 class="text-center">{{ sensor }}</h4>
+                            <!-- <h4 class="text-center">{{ sensor }}</h4> -->
                             <div id="{{ sensor }}-live-loading" class="chart-container" style="position: relative;">
                                 <div class="spinner"></div>
                                 <div class="loading-text">Loading live data...</div>
                             </div>
-                            <div class="chart-container" style="display:none;" id="{{ sensor }}-live-container">
+                            <div class="chart-container" style="display:none; padding-top: 35px;" id="{{ sensor }}-live-container">
                                 <canvas id="{{ sensor }}-live-chart"></canvas>
                             </div>
                         </div>
                     {% endfor %}
                 </div>
-
+                <h2 class="text-center mb-4 mt-4"> <i>Live View - 2 Hrs</i></h2>
                 <hr class="my-5">
 
                 <h2 class="text-center mb-4">Full History - Overview</h2>
-                <div class="row">
+                <div class="row" >
                     {% for sensor in sensors %}
                         <div class="col-lg-6 col-md-6 col-sm-12">
                             <h4 class="text-center">{{ sensor }} - Full Dataset</h4>
@@ -106,6 +117,27 @@
                 <div class="tab-pane fade" id="{{ sensor }}" role="tabpanel">
                     <h2 class="mb-4">{{ sensor }} - Interactive Data View</h2>
 
+                    <!-- CONTROLS -->
+                    <div class="mb-4 d-flex justify-content-between align-items-center">
+                        <div>
+                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
+                            <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
+                            <button onclick="resetToLast2h('{{ sensor }}')" class="btn btn-secondary me-2">Last 2 Hours</button>
+                            <button onclick="resetToFullData('{{ sensor }}')" class="btn btn-secondary me-2">Full Data</button>
+                            <button onclick="downloadInputRange('{{ sensor }}')" class="btn btn-info">Download CSV</button>
+                        </div>
+                      
+                        <!-- <div class="form-group d-inline-block ms-3">
+                            <label class="form-label me-2" style="color: orange;">Missing handling:</label>
+                            <select id="{{ sensor }}-missing-mode" class="form-select d-inline-block" style="width: 160px;">
+                                <option value="interpolate" selected>Interpolate (smooth)</option>
+                                <option value="clip0">Clip to zero</option>
+                                <option value="discrete">Discrete (no connect)</option>
+                            </select>
+                        </div> -->
+
+                    </div>
+
                     <!-- INPUT SECTION: Controls & Parameters -->
                     <div class="row mb-3 align-items-end">
                         <div class="col-md-3">
@@ -116,7 +148,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label">Start Date</label>
                             <input type="date" id="{{ sensor }}-start-date" class="form-control">
                         </div>
@@ -124,7 +156,7 @@
                             <label class="form-label">Start Time</label>
                             <input type="time" id="{{ sensor }}-start-time" class="form-control" step="60">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label">End Date</label>
                             <input type="date" id="{{ sensor }}-end-date" class="form-control">
                         </div>
@@ -134,24 +166,7 @@
                         </div>
                     </div>
 
-                    <!-- CONTROLS -->
-                    <div class="mb-4 d-flex justify-content-between align-items-center">
-                        <div>
-                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
-                            <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
-                            <button onclick="downloadInputRange('{{ sensor }}')" class="btn btn-info">Download CSV</button>
-                        </div>
-                      
-                        <div class="form-group d-inline-block ms-3">
-                            <label class="form-label me-2" style="color: orange;">Missing handling:</label>
-                            <select id="{{ sensor }}-missing-mode" class="form-select d-inline-block" style="width: 160px;">
-                                <option value="interpolate" selected>Interpolate (smooth)</option>
-                                <!-- <option value="clip0">Clip to zero</option> -->
-                                <option value="discrete">Discrete (no connect)</option>
-                            </select>
-                        </div>
 
-                    </div>
 
                     <!-- OUTPUT SECTION: Chart -->
                     <div id="{{ sensor }}-detailed-loading" class="chart-container mt-4" style="position: relative;">
@@ -178,14 +193,23 @@
     function initLiveChart(canvasId, data, sensorName) {
         const params = sensors[sensorName].params;
         const colors = sensors[sensorName].colors;
+
+        // Capitalize first letter properly
+        const capitalize = str => {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+        };
+
         const datasets = params.map((p, i) => ({
-            label: p,
+            label: capitalize(p),                    // e.g. Co2, Temperature, Humidity
             data: data.map(d => ({ x: d.timestamp, y: d[p] || null })),
             borderColor: colors[i],
             backgroundColor: colors[i] + '40',
             tension: 0.3,
             pointRadius: 0,
-            fill: false
+            fill: false,
+            borderWidth: 2.5,                        // nice visible thickness
+            borderDash: [0]                          // SOLID lines only - no dashes
         }));
 
         return new Chart(document.getElementById(canvasId), {
@@ -194,11 +218,44 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
+
                 plugins: {
+                    title: {
+                        display: true,
+                        text: sensorName.toUpperCase(),      // ← ALL UPPERCASE like "SCD-30"
+                        color: 'white',
+                        font: {
+                            size: 22,
+                            weight: 'bold',
+                            family: "'NasalizationRg'"
+                        },
+                        align: 'center',                     // ← CENTERED at top
+                        padding: {
+                            top: 5,
+                            bottom: 10
+                        }
+                    },
+
+                    legend: {
+                        position: 'bottom',
+                        align: 'center',
+                        labels: {
+                            color: 'white',
+                            font: {
+                                size: 13,
+                                family: "sans-serif"  // optional: also legend in Nasalization
+                            },
+                            padding: 18,
+                            usePointStyle: true,             // ← this is key for nice line samples
+                            pointStyle: 'line',              // force line instead of circle/box
+                            boxWidth: 120,                    // longer line sample
+                            boxHeight: 8,                    // thin line
+                            lineWidth: 8,
+                            useBorderRadius: false,
+                            borderRadius: 0
+                        }
+                    },
+
                     tooltip: {
                         mode: 'index',
                         intersect: false,
@@ -217,11 +274,14 @@
                                 return label;
                             }
                         }
-                    },
-                    legend: {
-                        labels: { color: 'white' }
                     }
                 },
+
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+
                 scales: {
                     x: {
                         type: 'time',
@@ -412,6 +472,7 @@
     }
 
     function resetToLast24h(sensor) {
+        
         const today = new Date().toISOString().split('T')[0];
         document.getElementById(`${sensor}-start-date`).value = today;
         document.getElementById(`${sensor}-start-time`).value = '00:00';
@@ -420,39 +481,99 @@
         loadCustomRangeData(sensor);
     }
 
+    function resetToLast2h(sensor) {
+        // Show loading feedback
+        const loading = document.getElementById(`${sensor}-detailed-loading`);
+        if (loading) {
+            loading.style.display = 'block';
+            loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading last 2 hours...</div>';
+        }
+
+        // Fetch the real last 2 hours directly from backend (same as Main tab uses)
+        fetch(`/last_2h_data/${sensor}`)
+            .then(r => {
+                if (!r.ok) throw new Error("Failed to fetch last 2h data");
+                return r.json();
+            })
+            .then(data => {
+                if (data && data.length > 0) {
+                    // Set date/time inputs based on actual fetched range
+                    const first = new Date(data[0].timestamp);
+                    const last  = new Date(data[data.length-1].timestamp);
+
+                    document.getElementById(`${sensor}-start-date`).value = first.toISOString().split('T')[0];
+                    document.getElementById(`${sensor}-start-time`).value = first.toTimeString().slice(0,5);
+                    
+                    document.getElementById(`${sensor}-end-date`).value   = last.toISOString().split('T')[0];
+                    document.getElementById(`${sensor}-end-time`).value   = last.toTimeString().slice(0,5);
+
+                    // Display this data directly (no filtering needed)
+                    processAndDisplayDetailedData(sensor, data);
+                } else {
+                    alert("No data in the last 2 hours yet.");
+                    loading.style.display = 'none';
+                }
+            })
+            .catch(err => {
+                console.error("Last 2h fetch failed:", err);
+                alert("Failed to load last 2 hours. Showing full data instead.");
+                if (fullSensorData[sensor]) {
+                    processAndDisplayDetailedData(sensor, fullSensorData[sensor]);
+                }
+                loading.style.display = 'none';
+            });
+    }
+
+    function resetToFullData(sensor) {
+        const fullData = fullSensorData[sensor];
+        
+        if (!fullData || fullData.length === 0) {
+            alert("Full data not loaded yet — please wait a moment.");
+            return;
+        }
+
+        // Show loading spinner briefly
+        const loading = document.getElementById(`${sensor}-detailed-loading`);
+        loading.style.display = 'block';
+
+        // Directly show the full dataset (exactly like the fallback does)
+        processAndDisplayDetailedData(sensor, fullData);
+
+        loading.style.display = 'none';
+    }
 
     // New function: Load full range info, prefill dates, then load full data
     async function initializeSensorTab(sensor) {
-        const loading = document.getElementById(`${sensor}-detailed-loading`);
-        loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full range...</div>';
+            const loading = document.getElementById(`${sensor}-detailed-loading`);
+            loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full range...</div>';
 
-        try {
-            const res = await fetch(`/sensor_range/${sensor}`);
-            if (!res.ok) throw new Error("Range fetch failed");
+            try {
+                const res = await fetch(`/sensor_range/${sensor}`);
+                if (!res.ok) throw new Error("Range fetch failed");
 
-            const info = await res.json();
+                const info = await res.json();
 
-            if (!info.start || !info.end) {
-                loading.innerHTML = '<div class="loading-text text-warning">No data available</div>';
-                return;
+                if (!info.start || !info.end) {
+                    loading.innerHTML = '<div class="loading-text text-warning">No data available</div>';
+                    return;
+                }
+
+                // Prefill date/time inputs with actual first/last timestamp
+                const startDt = new Date(info.start);
+                const endDt   = new Date(info.end);
+
+                document.getElementById(`${sensor}-start-date`).value = startDt.toISOString().split('T')[0];
+                document.getElementById(`${sensor}-start-time`).value = startDt.toTimeString().slice(0, 5);
+                document.getElementById(`${sensor}-end-date`).value   = endDt.toISOString().split('T')[0];
+                document.getElementById(`${sensor}-end-time`).value   = endDt.toTimeString().slice(0, 5);
+
+                // Now load the full range
+                loadCustomRangeData(sensor);
+            } catch (err) {
+                console.error("Initialize tab error:", err);
+                loading.innerHTML = '<div class="loading-text text-danger">Failed to load range</div>';
             }
-
-            // Prefill date/time inputs with actual first/last timestamp
-            const startDt = new Date(info.start);
-            const endDt   = new Date(info.end);
-
-            document.getElementById(`${sensor}-start-date`).value = startDt.toISOString().split('T')[0];
-            document.getElementById(`${sensor}-start-time`).value = startDt.toTimeString().slice(0, 5);
-            document.getElementById(`${sensor}-end-date`).value   = endDt.toISOString().split('T')[0];
-            document.getElementById(`${sensor}-end-time`).value   = endDt.toTimeString().slice(0, 5);
-
-            // Now load the full range
-            loadCustomRangeData(sensor);
-        } catch (err) {
-            console.error("Initialize tab error:", err);
-            loading.innerHTML = '<div class="loading-text text-danger">Failed to load range</div>';
         }
-    }
 
     // ─────────────────────────────────────────────────────────────
     // 4. DETAILED SENSOR TAB - PROCESSING & DISPLAY (OUTPUT)
@@ -722,11 +843,7 @@
         });
     });
 
-    
-    // Page load
-    window.addEventListener('load', () => {
-        Object.keys(sensors).forEach(loadMainData);
-    });
+
 </script>
 
 </body>
