@@ -121,7 +121,7 @@
                     <!-- CONTROLS -->
                     <div class="mb-4 d-flex justify-content-between align-items-center">
                         <div>
-                            <!-- <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button> -->
+                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
                             <button onclick="resetToLast2h('{{ sensor }}')" class="btn btn-secondary me-2">Last 2 Hours</button>
                             <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
                             <button onclick="resetToFullData('{{ sensor }}')" class="btn btn-secondary me-2">Full Data</button>
@@ -595,20 +595,11 @@
             loading.innerHTML = '<div class="loading-text text-warning">No data in selected range</div>';
             return;
         }
-        // Special handling for BNO085: keep only linear accel + rename to acc_x/y/z
-        if (sensor.toUpperCase().includes('BNO085')) {
-                const labelMap = {
-                    'linear_accel_x': 'AccX',
-                    'linear_accel_y': 'AccY',
-                    'linear_accel_z': 'AccZ'
-                };
-                chart.data.datasets[0].label = labelMap[metric] || metric;
-                chart.update();
-            }
         const metric = document.getElementById(`${sensor}-metric`).value;
         const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
         const mode = document.getElementById(`${sensor}-missing-mode`)?.value || 'interpolate';
 
+       
         // Fix dropdown labels for BNO085 (change text to AccX/Y/Z, keep value for chart)
         if (sensor.toUpperCase().includes('BNO085')) {
             const labelMap = {
@@ -727,6 +718,19 @@
             chart.update();
         }
 
+
+        // Special handling for BNO085: keep only linear accel + rename to acc_x/y/z
+        if (sensor.toUpperCase().includes('BNO085')) {
+                const labelMap = {
+                    'linear_accel_x': 'AccX',
+                    'linear_accel_y': 'AccY',
+                    'linear_accel_z': 'AccZ'
+                };
+                chart.data.datasets[0].label = labelMap[metric] || metric;
+                chart.update();
+            }
+
+        
         loading.style.display = 'none';
         container.style.display = 'block';
     }
