@@ -1,0 +1,20 @@
+##sudo systemctl enable simoc-remote
+##sudo systemctl start simoc-remote
+
+
+
+[Unit]
+Description=Service to automatically start SIMOC Remote
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/SimocRemote
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/SimocRemote/venv/bin/python app.py
+Restart=always
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
