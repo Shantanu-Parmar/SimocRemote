@@ -68,8 +68,15 @@ def discover_sensors(log_dir: str, blocked_substrings: list) -> dict:
             logger.error(f"Error reading file {filename}: {e}")
             continue
 
+        
         if params:
             param_list = sorted(list(params))
+
+            # Special handling for BNO085 or MOCK_IMU: keep ONLY linear_accel_* and rename to acc_x/y/z
+            # Special handling for BNO085 or MOCK_IMU: keep ONLY linear_accel_x/y/z (original names), drop everything else
+            if 'BNO085' in sensor_name.upper() or 'MOCK_IMU' in sensor_name.upper():
+                keep_params = {'linear_accel_x', 'linear_accel_y', 'linear_accel_z'}
+                param_list = [p for p in param_list if p in keep_params]  # drop all others, keep original names
             assigned_colors = []
             for p in param_list:
                 if p.lower() == 'co2':
@@ -83,6 +90,7 @@ def discover_sensors(log_dir: str, blocked_substrings: list) -> dict:
                 "colors": assigned_colors
             }
             logger.info(f"Discovered sensor: {sensor_name} with params {param_list}")
+
 
     return dict(sorted(sensors.items()))
 

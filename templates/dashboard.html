@@ -52,6 +52,7 @@
         h2, h4 { color: white; }
         label { color: orange; }
         .btn-warning { background-color: orange; border-color: orange; color: black; }
+        .btn-secondary {background-color: orange; border-color: orange; color: black;}
         .btn-warning:hover { background-color: #ffaa00; border-color: #ffaa00; }
         .btn-info { background-color: #17a2b8; border-color: #17a2b8; }
         hr { border-color: rgba(255,165,0,0.3); margin: 60px 0; }
@@ -120,7 +121,7 @@
                     <!-- CONTROLS -->
                     <div class="mb-4 d-flex justify-content-between align-items-center">
                         <div>
-                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
+                            <!-- <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button> -->
                             <button onclick="resetToLast2h('{{ sensor }}')" class="btn btn-secondary me-2">Last 2 Hours</button>
                             <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
                             <button onclick="resetToFullData('{{ sensor }}')" class="btn btn-secondary me-2">Full Data</button>
@@ -199,9 +200,15 @@
             if (!str) return '';
             return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
         };
-
+        const labelFix = (p) => {
+                if (p === 'linear_accel_x') return 'AccX';
+                if (p === 'linear_accel_y') return 'AccY';
+                if (p === 'linear_accel_z') return 'AccZ';
+                return capitalize(p);
+            };
         const datasets = params.map((p, i) => ({
-            label: capitalize(p),                    // e.g. Co2, Temperature, Humidity
+            //label: capitalize(p),                    // e.g. Co2, Temperature, Humidity
+            label: labelFix(p),
             data: data.map(d => ({ x: d.timestamp, y: d[p] || null })),
             borderColor: colors[i],
             backgroundColor: colors[i] + '40',
@@ -574,6 +581,7 @@
                 loading.innerHTML = '<div class="loading-text text-danger">Failed to load range</div>';
             }
         }
+    
 
     // ─────────────────────────────────────────────────────────────
     // 4. DETAILED SENSOR TAB - PROCESSING & DISPLAY (OUTPUT)
@@ -587,11 +595,36 @@
             loading.innerHTML = '<div class="loading-text text-warning">No data in selected range</div>';
             return;
         }
-
+        // Special handling for BNO085: keep only linear accel + rename to acc_x/y/z
+        if (sensor.toUpperCase().includes('BNO085')) {
+                const labelMap = {
+                    'linear_accel_x': 'AccX',
+                    'linear_accel_y': 'AccY',
+                    'linear_accel_z': 'AccZ'
+                };
+                chart.data.datasets[0].label = labelMap[metric] || metric;
+                chart.update();
+            }
         const metric = document.getElementById(`${sensor}-metric`).value;
         const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
-
         const mode = document.getElementById(`${sensor}-missing-mode`)?.value || 'interpolate';
+
+        // Fix dropdown labels for BNO085 (change text to AccX/Y/Z, keep value for chart)
+        if (sensor.toUpperCase().includes('BNO085')) {
+            const labelMap = {
+                'linear_accel_x': 'AccX',
+                'linear_accel_y': 'AccY',
+                'linear_accel_z': 'AccZ'
+            };
+            const select = document.getElementById(`${sensor}-metric`);
+            if (select) {
+                Array.from(select.options).forEach(option => {
+                    if (labelMap[option.value]) {
+                        option.text = labelMap[option.value];
+                    }
+                });
+            }
+        }
 
         let chartDataPoints = data.map(d => ({
             x: d.timestamp,
@@ -842,7 +875,6 @@
             }
         });
     });
-
 
 </script>
 
