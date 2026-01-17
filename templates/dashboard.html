@@ -36,8 +36,8 @@
         .top-bar img { height: 60px; margin-right: 20px; }
         .top-bar span { color: rgb(255, 255, 255); font-size: 32px; font-weight: bold; font-family: 'NasalizationRg', Arial, Helvetica, sans-serif;  /* fallback */}
         .nav-tabs { background-color: rgba(0, 0, 0, 0.7); border: none; backdrop-filter: blur(5px); }
-        .nav-tabs .nav-link { color: orange; border: none; }
-        .nav-tabs .nav-link.active { color: orange; background: transparent; border-bottom: 3px solid orange; }
+        .nav-tabs .nav-link { color: rgb(255, 255, 255); border: none; }
+        .nav-tabs .nav-link.active { color: rgb(255, 255, 255); background: transparent; border-bottom: 3px solid orange; }
         .chart-container { 
             position: relative; height: 320px; margin: 20px 0; 
             background: rgba(0, 0, 0, 0.5); border-radius: 10px; padding: 10px;
@@ -63,19 +63,22 @@
     <div class="top-bar">
         <div style="display: flex; align-items: center;">
             <img src="/static/logo.png" alt="Logo">
-            <span>SIMOC</span>
+            <span>SIMOC Live</span>
         </div>
         <div style="flex: 1;"></div> <!-- spacer - no toggle anymore -->
-    </div>
-
-    <div class="container mt-4">
-        <ul class="nav nav-tabs justify-content-center" id="myTab" role="tablist">
+        <ul class="nav nav-tabs justify-content-center" id="myTab" role="tablist, style="margin-left: 40px;">
             <li class="nav-item"><button class="nav-link active" id="main-tab" data-bs-toggle="tab" data-bs-target="#main">Main</button></li>
             {% for sensor in sensors %}
                 <li class="nav-item"><button class="nav-link" id="{{ sensor }}-tab" data-bs-toggle="tab" data-bs-target="#{{ sensor }}">{{ sensor }}</button></li>
             {% endfor %}
         </ul>
 
+        <div style="flex: 1;"></div> <!-- spacer - no toggle anymore -->
+
+    </div>
+
+    <div class="container mt-4">
+        
         <div class="tab-content" id="myTabContent">
             <!-- MAIN TAB (Live + Overview) -->
             <div class="tab-pane fade show active" id="main" role="tabpanel">
@@ -87,7 +90,7 @@
                                 <div class="spinner"></div>
                                 <div class="loading-text">Loading live data...</div>
                             </div>
-                            <div class="chart-container" style="display:none; padding-top: 35px;" id="{{ sensor }}-live-container">
+                            <div class="chart-container" style="display:none; padding-top: 15px;" id="{{ sensor }}-live-container">
                                 <canvas id="{{ sensor }}-live-chart"></canvas>
                             </div>
                         </div>
@@ -121,7 +124,7 @@
                     <!-- CONTROLS -->
                     <div class="mb-4 d-flex justify-content-between align-items-center">
                         <div>
-                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
+                            
                             <button onclick="resetToLast2h('{{ sensor }}')" class="btn btn-secondary me-2">Last 2 Hours</button>
                             <button onclick="resetToLast24h('{{ sensor }}')" class="btn btn-secondary me-2">Last 24 Hours</button>
                             <button onclick="resetToFullData('{{ sensor }}')" class="btn btn-secondary me-2">Full Data</button>
@@ -141,7 +144,7 @@
 
                     <!-- INPUT SECTION: Controls & Parameters -->
                     <div class="row mb-3 align-items-end">
-                        <div class="col-md-3">
+                        <div class="col-md-2">
                             <label class="form-label">Parameter</label>
                             <select id="{{ sensor }}-metric" class="form-select">
                                 {% for p in info.params %}
@@ -165,8 +168,12 @@
                             <label class="form-label">End Time</label>
                             <input type="time" id="{{ sensor }}-end-time" class="form-control" step="60">
                         </div>
+                        <div class="col-md-2">
+                            <button onclick="loadCustomRangeData('{{ sensor }}')" class="btn btn-warning me-2">Refresh</button>
+                        </div>
+                        
                     </div>
-
+                  
 
 
                     <!-- OUTPUT SECTION: Chart -->
