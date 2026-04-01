@@ -66,7 +66,7 @@
             <span>SIMOC Live</span>
         </div>
         <div style="flex: 1;"></div> <!-- spacer - no toggle anymore -->
-        <ul class="nav nav-tabs justify-content-center" id="myTab" role="tablist, style="margin-left: 40px;">
+        <ul class="nav nav-tabs justify-content-center" id="myTab" role="tablist" style="margin-left: 40px;">
             <li class="nav-item"><button class="nav-link active" id="main-tab" data-bs-toggle="tab" data-bs-target="#main">Main</button></li>
             {% for sensor in sensors %}
                 <li class="nav-item"><button class="nav-link" id="{{ sensor }}-tab" data-bs-toggle="tab" data-bs-target="#{{ sensor }}">{{ sensor }}</button></li>
@@ -194,9 +194,466 @@
     const sensors = {{ sensors|tojson }};
     let charts = {};
     let fullSensorData = {};  // Will store { sensor: [full decimated entries] }
-    // ─────────────────────────────────────────────────────────────
-    // 1. CHART INITIALIZATION FUNCTIONS
-    // ─────────────────────────────────────────────────────────────
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // UTILITY: Date/Time Handling (SINGLE SOURCE OF TRUTH)
+    // ═══════════════════════════════════════════════════════════════════
+
+    const DateTimeUtils = {
+        /**
+         * Parse date string (YYYY-MM-DD) and time string (HH:mm) into ISO timestamp.
+         * If timeStr is empty, uses the specified default (start/end of day).
+         * Returns: ISO string like '2025-04-01T14:30:00Z'
+         */
+        parseDateTime(dateStr, timeStr, isEndOfDay = false) {
+            if (!dateStr) return null;
+            
+            const cleanTime = timeStr?.trim() || (isEndOfDay ? '23:59' : '00:00');
+            const [hour, min] = cleanTime.split(':').map(Number);
+            
+            // Create local datetime, then to ISO
+            const dt = new Date(dateStr);
+            dt.setHours(hour || 0, min || 0, isEndOfDay ? 59 : 0, 0);
+            
+            // Return ISO string (accounts for browser timezone)
+            return dt.toISOString();
+        },
+
+        /**
+         * Extract date (YYYY-MM-DD) from ISO timestamp.
+         */
+        dateFromISO(isoStr) {
+            if (!isoStr) return '';
+            return isoStr.split('T')[0];
+        },
+
+        /**
+         * Extract time (HH:mm) from ISO timestamp.
+         */
+        timeFromISO(isoStr) {
+            if (!isoStr) return '';
+            const time = isoStr.split('T')[1];
+            return time ? time.substring(0, 5) : '';
+        },
+
+        /**
+         * Create a date object from ISO string (safe parsing).
+         */
+        parseISO(isoStr) {
+            try {
+                return new Date(isoStr);
+            } catch {
+                console.error('Invalid ISO string:', isoStr);
+                return null;
+            }
+        },
+
+        /**
+         * Get current date as YYYY-MM-DD.
+         */
+        todayString() {
+            return new Date().toISOString().split('T')[0];
+        }
+    };
+
+    // ─────────────────────────────────────────────────────────────────
+    // UTILITY: DOM Getters (reduce boilerplate)
+    // ─────────────────────────────────────────────────────────────────
+
+    const DOM = {
+        loading: (sensor) => document.getElementById(`${sensor}-detailed-loading`),
+        container: (sensor) => document.getElementById(`${sensor}-detailed-container`),
+        startDate: (sensor) => document.getElementById(`${sensor}-start-date`),
+        startTime: (sensor) => document.getElementById(`${sensor}-start-time`),
+        endDate: (sensor) => document.getElementById(`${sensor}-end-date`),
+        endTime: (sensor) => document.getElementById(`${sensor}-end-time`),
+        metric: (sensor) => document.getElementById(`${sensor}-metric`),
+        canvas: (sensor) => document.getElementById(`${sensor}-detailed-chart`)
+    };
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Prefill Date/Time Inputs (NEW - Unified)
+    // ─────────────────────────────────────────────────────────────────
+
+    function prefillDateTimeInputs(sensor, startISO, endISO) {
+        /**
+         * Helper to safely set date/time inputs from ISO strings.
+         * Handles null/invalid gracefully.
+         */
+        try {
+            if (startISO) {
+                DOM.startDate(sensor).value = DateTimeUtils.dateFromISO(startISO);
+                DOM.startTime(sensor).value = DateTimeUtils.timeFromISO(startISO);
+            }
+            if (endISO) {
+                DOM.endDate(sensor).value = DateTimeUtils.dateFromISO(endISO);
+                DOM.endTime(sensor).value = DateTimeUtils.timeFromISO(endISO);
+            }
+        } catch (err) {
+            console.error(`prefillDateTimeInputs error for ${sensor}:`, err);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Build Time Range from Inputs (NEW - Clean & Validated)
+    // ─────────────────────────────────────────────────────────────────
+
+    function getTimeRangeFromInputs(sensor) {
+        /**
+         * Read date/time inputs, validate, return { startISO, endISO, startTs, endTs } or null.
+         */
+        const startDate = DOM.startDate(sensor).value?.trim();
+        const startTime = DOM.startTime(sensor).value?.trim();
+        const endDate = DOM.endDate(sensor).value?.trim();
+        const endTime = DOM.endTime(sensor).value?.trim();
+
+        if (!startDate || !endDate) {
+            alert('Please set both start and end dates');
+            return null;
+        }
+
+        const startISO = DateTimeUtils.parseDateTime(startDate, startTime, false);
+        const endISO = DateTimeUtils.parseDateTime(endDate, endTime, true);
+
+        if (!startISO || !endISO) {
+            alert('Invalid date/time format');
+            return null;
+        }
+
+        const startTs = new Date(startISO).getTime();
+        const endTs = new Date(endISO).getTime();
+
+        if (startTs > endTs) {
+            alert('Start time cannot be after end time');
+            return null;
+        }
+
+        return { startISO, endISO, startTs, endTs };
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Load & Store Full Data (CONSOLIDATED)
+    // ─────────────────────────────────────────────────────────────────
+
+    async function loadAndStoreFullData(sensor) {
+        /**
+         * Fetch decimated full history once per sensor tab open.
+         * Store in fullSensorData, prefill inputs, display.
+         * Called once on first tab show (via event listener).
+         */
+        const loading = DOM.loading(sensor);
+        loading.style.display = 'block';
+        loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full history...</div>';
+
+        try {
+            const r = await fetch(`/decimated_data/${sensor}`);
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+            const data = await r.json();
+            if (!data || data.length === 0) {
+                loading.innerHTML = '<div class="loading-text text-warning">No data available for this sensor</div>';
+                return null;
+            }
+
+            // Store
+            fullSensorData[sensor] = data;
+
+            // Extract actual time bounds
+            const times = data.map(d => DateTimeUtils.parseISO(d.timestamp)?.getTime()).filter(t => t);
+            const minTime = new Date(Math.min(...times));
+            const maxTime = new Date(Math.max(...times));
+
+            // Prefill inputs with actual bounds
+            prefillDateTimeInputs(sensor, minTime.toISOString(), maxTime.toISOString());
+
+            // Display the full range
+            processAndDisplayDetailedData(sensor, data);
+
+            return data;
+        } catch (err) {
+            console.error(`loadAndStoreFullData error for ${sensor}:`, err);
+            loading.innerHTML = `<div class="loading-text text-danger">Failed to load data: ${err.message}</div>`;
+            return null;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Load Custom Range (REFACTORED - Uses utilities)
+    // ─────────────────────────────────────────────────────────────────
+
+    function loadCustomRangeData(sensor) {
+        /**
+         * Read date/time from inputs, filter stored full data locally, display.
+         * No backend call needed if full data already loaded.
+         */
+        const range = getTimeRangeFromInputs(sensor);
+        if (!range) return;
+
+        const { startTs, endTs } = range;
+        const fullData = fullSensorData[sensor];
+
+        if (!fullData || fullData.length === 0) {
+            alert('Full data not loaded yet. Please wait.');
+            return;
+        }
+
+        // Filter locally
+        const filtered = fullData.filter(d => {
+            const ts = new Date(d.timestamp).getTime();
+            return ts >= startTs && ts <= endTs;
+        });
+
+        if (filtered.length === 0) {
+            alert('No data in selected range. Showing full dataset instead.');
+            processAndDisplayDetailedData(sensor, fullData);
+        } else {
+            processAndDisplayDetailedData(sensor, filtered);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Preset Ranges (REFACTORED - Uses utilities)
+    // ─────────────────────────────────────────────────────────────────
+
+    function resetToLast2h(sensor) {
+        /**
+         * Fetch real last 2h from backend (not local filtering).
+         * Prefill inputs based on actual fetched range.
+         */
+        const loading = DOM.loading(sensor);
+        loading.style.display = 'block';
+        loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading last 2 hours...</div>';
+
+        fetch(`/last_2h_data/${sensor}`)
+            .then(r => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(data => {
+                if (!data || data.length === 0) {
+                    alert('No data in the last 2 hours.');
+                    loading.style.display = 'none';
+                    return;
+                }
+
+                // Prefill based on actual fetched data
+                const first = new Date(data[0].timestamp);
+                const last = new Date(data[data.length - 1].timestamp);
+                prefillDateTimeInputs(sensor, first.toISOString(), last.toISOString());
+
+                // Display
+                processAndDisplayDetailedData(sensor, data);
+            })
+            .catch(err => {
+                console.error('resetToLast2h error:', err);
+                alert('Failed to load last 2 hours.');
+                loading.style.display = 'none';
+            });
+    }
+
+    function resetToLast24h(sensor) {
+        /**
+         * Set inputs to today's date (00:00 to 23:59), then load.
+         */
+        const today = DateTimeUtils.todayString();
+        DOM.startDate(sensor).value = today;
+        DOM.startTime(sensor).value = '00:00';
+        DOM.endDate(sensor).value = today;
+        DOM.endTime(sensor).value = '23:59';
+
+        loadCustomRangeData(sensor);
+    }
+
+    function resetToFullData(sensor) {
+        /**
+         * Display full stored dataset (no filtering).
+         */
+        const fullData = fullSensorData[sensor];
+        if (!fullData || fullData.length === 0) {
+            alert('Full data not loaded yet.');
+            return;
+        }
+
+        // Prefill inputs to match full range
+        const times = fullData.map(d => DateTimeUtils.parseISO(d.timestamp)?.getTime()).filter(t => t);
+        const minTime = new Date(Math.min(...times));
+        const maxTime = new Date(Math.max(...times));
+        prefillDateTimeInputs(sensor, minTime.toISOString(), maxTime.toISOString());
+
+        // Display
+        processAndDisplayDetailedData(sensor, fullData);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Process & Display Detailed Data (CHART RENDERING)
+    // ─────────────────────────────────────────────────────────────────
+
+    function processAndDisplayDetailedData(sensor, data) {
+        /**
+         * Render chart from filtered/selected data.
+         * Handles metric selection, missing data mode, zoom/pan.
+         */
+        const loading = DOM.loading(sensor);
+        const container = DOM.container(sensor);
+
+        if (!data || data.length === 0) {
+            loading.innerHTML = '<div class="loading-text text-warning">No data in selected range</div>';
+            loading.style.display = 'block';
+            container.style.display = 'none';
+            return;
+        }
+
+        const metric = DOM.metric(sensor).value;
+        const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
+        const mode = document.getElementById(`${sensor}-missing-mode`)?.value || 'interpolate';
+
+        // Fix BNO085 dropdown labels
+        if (sensor.toUpperCase().includes('BNO085')) {
+            const labelMap = {
+                'linear_accel_x': 'AccX',
+                'linear_accel_y': 'AccY',
+                'linear_accel_z': 'AccZ'
+            };
+            const select = DOM.metric(sensor);
+            Array.from(select.options).forEach(option => {
+                if (labelMap[option.value]) {
+                    option.text = labelMap[option.value];
+                }
+            });
+        }
+
+        // Build chart data
+        let chartDataPoints = data.map(d => ({
+            x: d.timestamp,
+            y: d[metric] !== undefined && d[metric] !== null ? d[metric] : null
+        }));
+
+        // Handle missing data mode
+        let chartType = 'line';
+        let tension = 0.3;
+        let spanGaps = true;
+        let pointRadius = 2;
+        let borderWidth = 2;
+        let stepped = false;
+
+        if (mode === 'clip0') {
+            // Insert zero points at gaps to force drop
+            const enhanced = [];
+            for (let i = 0; i < chartDataPoints.length; i++) {
+                enhanced.push(chartDataPoints[i]);
+                if (i < chartDataPoints.length - 1) {
+                    const currTs = new Date(chartDataPoints[i].x).getTime();
+                    const nextTs = new Date(chartDataPoints[i + 1].x).getTime();
+                    if (nextTs - currTs > 60000) {  // gap > 1 min
+                        const midTs = new Date((currTs + nextTs) / 2).toISOString();
+                        enhanced.push({ x: midTs, y: 0 });
+                    }
+                }
+            }
+            chartDataPoints = enhanced;
+            tension = 0;
+            spanGaps = true;
+            stepped = true;
+        } else if (mode === 'discrete') {
+            chartType = 'bar';
+            tension = 0;
+            spanGaps = false;
+            pointRadius = 0;
+            borderWidth = 3;
+        }
+
+        // Destroy old chart if exists
+        if (charts[`${sensor}-detailed`]) {
+            charts[`${sensor}-detailed`].destroy();
+        }
+
+        // Create new chart
+        const chart = new Chart(DOM.canvas(sensor), {
+            type: chartType,
+            data: {
+                datasets: [{
+                    label: sensor.toUpperCase().includes('BNO085') ? 
+                        ({ 'linear_accel_x': 'AccX', 'linear_accel_y': 'AccY', 'linear_accel_z': 'AccZ' }[metric] || metric) : 
+                        metric,
+                    data: chartDataPoints,
+                    borderColor: color,
+                    backgroundColor: mode === 'discrete' ? color + '80' : color + '40',
+                    tension: tension,
+                    spanGaps: spanGaps,
+                    pointRadius: pointRadius,
+                    borderWidth: borderWidth,
+                    fill: false,
+                    stepped: stepped
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: 'white' } },
+                    zoom: {
+                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+                        pan: { enabled: true, mode: 'x' }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { parser: 'yyyy-MM-dd HH:mm:ss.SSSSSS' },
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.2)' }
+                    },
+                    y: {
+                        min: mode === 'clip0' ? 0 : undefined,
+                        ticks: { color: 'white' },
+                        grid: { color: 'rgba(255,255,255,0.2)' }
+                    }
+                }
+            }
+        });
+
+        charts[`${sensor}-detailed`] = chart;
+
+        // Auto-scale X axis with padding
+        if (chartDataPoints.length > 0) {
+            const times = chartDataPoints.map(d => new Date(d.x).getTime()).filter(t => t);
+            const minT = Math.min(...times);
+            const maxT = Math.max(...times);
+            const padding = (maxT - minT) * 0.03 || 3600000;
+
+            chart.options.scales.x.min = new Date(minT - padding);
+            chart.options.scales.x.max = new Date(maxT + padding);
+            chart.update();
+        }
+
+        loading.style.display = 'none';
+        container.style.display = 'block';
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FUNCTION: Download CSV (REFACTORED - Uses utilities)
+    // ─────────────────────────────────────────────────────────────────
+
+    function downloadInputRange(sensor) {
+        /**
+         * Download CSV for selected time range.
+         */
+        const range = getTimeRangeFromInputs(sensor);
+        if (!range) return;
+
+        const { startISO, endISO } = range;
+        
+        // Format as backend expects
+        const start = startISO.split('.')[0];  // Remove milliseconds
+        const end = endISO.split('.')[0];
+
+        const url = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        window.location.href = url;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // 1. CHART INITIALIZATION FUNCTIONS (MAIN TAB)
+    // ─────────────────────────────────────────────────────────────────
 
     function initLiveChart(canvasId, data, sensorName) {
         const params = sensors[sensorName].params;
@@ -386,9 +843,9 @@
         });
     }
 
-    // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
     // 2. MAIN DASHBOARD LOADING & LIVE UPDATES
-    // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
 
     function loadMainData(sensor) {
         document.getElementById(`${sensor}-live-loading`).style.display = 'block';
@@ -435,449 +892,29 @@
     Object.keys(sensors).forEach(loadMainData);
     setInterval(() => Object.keys(sensors).forEach(updateLive), 10000);
 
-    // ─────────────────────────────────────────────────────────────
-    // 3. DETAILED SENSOR TAB - INPUT / FETCHING
-    // ─────────────────────────────────────────────────────────────
-
-
-    function loadCustomRangeData(sensor) {
-        const startDate = document.getElementById(`${sensor}-start-date`).value;
-        const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
-        const endDate   = document.getElementById(`${sensor}-end-date`).value;
-        const endTime   = document.getElementById(`${sensor}-end-time`).value || '23:59';
-
-        if (!startDate || !endDate) {
-            alert("Please select both start and end dates");
-            return;
-        }
-
-        const startStr = `${startDate} ${startTime}:00`;
-        const endStr   = `${endDate} ${endTime}:59`;
-
-        const startTs = new Date(startStr).getTime();
-        const endTs   = new Date(endStr).getTime();
-
-        const fullData = fullSensorData[sensor];
-
-        if (!fullData || fullData.length === 0) {
-            document.getElementById(`${sensor}-detailed-loading`).innerHTML =
-                '<div class="loading-text text-warning">No full data loaded yet</div>';
-            return;
-        }
-
-        // Filter locally
-        const filtered = fullData.filter(d => {
-            const ts = new Date(d.timestamp).getTime();
-            return ts >= startTs && ts <= endTs;
-        });
-
-        const loading = document.getElementById(`${sensor}-detailed-loading`);
-        loading.style.display = 'block';
-
-        if (filtered.length === 0) {
-            // Warning + show full instead
-            alert("No data in selected range — showing full available dataset instead");
-            processAndDisplayDetailedData(sensor, fullData);
-        } else {
-            processAndDisplayDetailedData(sensor, filtered);
-        }
-
-        loading.style.display = 'none';
-    }
-
-    function resetToLast24h(sensor) {
-        
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById(`${sensor}-start-date`).value = today;
-        document.getElementById(`${sensor}-start-time`).value = '00:00';
-        document.getElementById(`${sensor}-end-date`).value = today;
-        document.getElementById(`${sensor}-end-time`).value = '23:59';
-        loadCustomRangeData(sensor);
-    }
-
-    function resetToLast2h(sensor) {
-        // Show loading feedback
-        const loading = document.getElementById(`${sensor}-detailed-loading`);
-        if (loading) {
-            loading.style.display = 'block';
-            loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading last 2 hours...</div>';
-        }
-
-        // Fetch the real last 2 hours directly from backend (same as Main tab uses)
-        fetch(`/last_2h_data/${sensor}`)
-            .then(r => {
-                if (!r.ok) throw new Error("Failed to fetch last 2h data");
-                return r.json();
-            })
-            .then(data => {
-                if (data && data.length > 0) {
-                    // Set date/time inputs based on actual fetched range
-                    const first = new Date(data[0].timestamp);
-                    const last  = new Date(data[data.length-1].timestamp);
-
-                    document.getElementById(`${sensor}-start-date`).value = first.toISOString().split('T')[0];
-                    document.getElementById(`${sensor}-start-time`).value = first.toTimeString().slice(0,5);
-                    
-                    document.getElementById(`${sensor}-end-date`).value   = last.toISOString().split('T')[0];
-                    document.getElementById(`${sensor}-end-time`).value   = last.toTimeString().slice(0,5);
-
-                    // Display this data directly (no filtering needed)
-                    processAndDisplayDetailedData(sensor, data);
-                } else {
-                    alert("No data in the last 2 hours yet.");
-                    loading.style.display = 'none';
-                }
-            })
-            .catch(err => {
-                console.error("Last 2h fetch failed:", err);
-                alert("Failed to load last 2 hours. Showing full data instead.");
-                if (fullSensorData[sensor]) {
-                    processAndDisplayDetailedData(sensor, fullSensorData[sensor]);
-                }
-                loading.style.display = 'none';
-            });
-    }
-
-    function resetToFullData(sensor) {
-        const fullData = fullSensorData[sensor];
-        
-        if (!fullData || fullData.length === 0) {
-            alert("Full data not loaded yet — please wait a moment.");
-            return;
-        }
-
-        // Show loading spinner briefly
-        const loading = document.getElementById(`${sensor}-detailed-loading`);
-        loading.style.display = 'block';
-
-        // Directly show the full dataset (exactly like the fallback does)
-        processAndDisplayDetailedData(sensor, fullData);
-
-        loading.style.display = 'none';
-    }
-
-    // New function: Load full range info, prefill dates, then load full data
-    async function initializeSensorTab(sensor) {
-            const loading = document.getElementById(`${sensor}-detailed-loading`);
-            loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full range...</div>';
-
-            try {
-                const res = await fetch(`/sensor_range/${sensor}`);
-                if (!res.ok) throw new Error("Range fetch failed");
-
-                const info = await res.json();
-
-                if (!info.start || !info.end) {
-                    loading.innerHTML = '<div class="loading-text text-warning">No data available</div>';
-                    return;
-                }
-
-                // Prefill date/time inputs with actual first/last timestamp
-                const startDt = new Date(info.start);
-                const endDt   = new Date(info.end);
-
-                document.getElementById(`${sensor}-start-date`).value = startDt.toISOString().split('T')[0];
-                document.getElementById(`${sensor}-start-time`).value = startDt.toTimeString().slice(0, 5);
-                document.getElementById(`${sensor}-end-date`).value   = endDt.toISOString().split('T')[0];
-                document.getElementById(`${sensor}-end-time`).value   = endDt.toTimeString().slice(0, 5);
-
-                // Now load the full range
-                loadCustomRangeData(sensor);
-            } catch (err) {
-                console.error("Initialize tab error:", err);
-                loading.innerHTML = '<div class="loading-text text-danger">Failed to load range</div>';
-            }
-        }
-    
-
-    // ─────────────────────────────────────────────────────────────
-    // 4. DETAILED SENSOR TAB - PROCESSING & DISPLAY (OUTPUT)
-    // ─────────────────────────────────────────────────────────────
-
-    function processAndDisplayDetailedData(sensor, data) {
-        const loading = document.getElementById(`${sensor}-detailed-loading`);
-        const container = document.getElementById(`${sensor}-detailed-container`);
-
-        if (!data || data.length === 0) {
-            loading.innerHTML = '<div class="loading-text text-warning">No data in selected range</div>';
-            return;
-        }
-        const metric = document.getElementById(`${sensor}-metric`).value;
-        const color = sensors[sensor].colors[sensors[sensor].params.indexOf(metric)] || '#FF8C00';
-        const mode = document.getElementById(`${sensor}-missing-mode`)?.value || 'interpolate';
-
-       
-        // Fix dropdown labels for BNO085 (change text to AccX/Y/Z, keep value for chart)
-        if (sensor.toUpperCase().includes('BNO085')) {
-            const labelMap = {
-                'linear_accel_x': 'AccX',
-                'linear_accel_y': 'AccY',
-                'linear_accel_z': 'AccZ'
-            };
-            const select = document.getElementById(`${sensor}-metric`);
-            if (select) {
-                Array.from(select.options).forEach(option => {
-                    if (labelMap[option.value]) {
-                        option.text = labelMap[option.value];
-                    }
-                });
-            }
-        }
-
-        let chartDataPoints = data.map(d => ({
-            x: d.timestamp,
-            y: d[metric] !== undefined && d[metric] !== null ? d[metric] : null
-        }));
-
-        let chartType = 'line';
-        let tension = 0.3;
-        let spanGaps = true;
-        let pointRadius = 2;
-        let borderWidth = 2;
-        let stepped = false;
-
-        if (mode === 'clip0') {
-            // Insert one 0 point after each real point to force drop (minimal extra points)
-            const enhanced = [];
-            for (let i = 0; i < chartDataPoints.length; i++) {
-                enhanced.push(chartDataPoints[i]);
-                // If next point exists and there's a gap, insert 0 just before it
-                if (i < chartDataPoints.length - 1) {
-                    const currTs = new Date(chartDataPoints[i].x).getTime();
-                    const nextTs = new Date(chartDataPoints[i+1].x).getTime();
-                    if (nextTs - currTs > 60000) {  // gap > 1 min
-                        const midTs = new Date((currTs + nextTs) / 2).toISOString();
-                        enhanced.push({ x: midTs, y: 0 });  // drop to zero in middle of gap
-                    }
-                }
-            }
-            chartDataPoints = enhanced;
-
-            tension = 0;
-            spanGaps = true;
-            stepped = true;  // ← This creates flat plateaus + sharp vertical drops to zero
-        } else if (mode === 'discrete') {
-            chartType = 'bar';
-            tension = 0;
-            spanGaps = false;
-            pointRadius = 0;
-            borderWidth = 3;
-        }
-
-        if (charts[`${sensor}-detailed`]) {
-            charts[`${sensor}-detailed`].destroy();
-        }
-
-        const chart = new Chart(document.getElementById(`${sensor}-detailed-chart`), {
-            type: chartType,
-            data: {
-                datasets: [{
-                    label: metric,
-                    data: chartDataPoints,
-                    borderColor: color,
-                    backgroundColor: mode === 'discrete' ? color + '80' : color + '40',
-                    tension: tension,
-                    spanGaps: spanGaps,
-                    pointRadius: pointRadius,
-                    borderWidth: borderWidth,
-                    fill: false,
-                    stepped: stepped  // ← Key for clip-to-zero: makes horizontal flats + vertical drops
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { labels: { color: 'white' } },
-                    zoom: {
-                        zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-                        pan: { enabled: true, mode: 'x' }
-                    }
-                },
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { parser: 'yyyy-MM-dd HH:mm:ss.SSSSSS' },
-                        ticks: { color: 'white' },
-                        grid: { color: 'rgba(255,255,255,0.2)' }
-                    },
-                    y: {
-                        min: mode === 'clip0' ? 0 : undefined,          // Force Y to include 0
-                        suggestedMin: mode === 'clip0' ? 0 : undefined, // Extra safety
-                        ticks: { color: 'white' },
-                        grid: { color: 'rgba(255,255,255,0.2)' }
-                    }
-                }
-            }
-        });
-
-        charts[`${sensor}-detailed`] = chart;
-
-        // Auto-scale
-        if (data.length > 0) {
-            const times = data.map(d => new Date(d.timestamp).getTime());
-            const minT = Math.min(...times);
-            const maxT = Math.max(...times);
-            const padding = (maxT - minT) * 0.03 || 3600000;
-
-            chart.options.scales.x.min = new Date(minT - padding);
-            chart.options.scales.x.max = new Date(maxT + padding);
-            chart.update();
-        }
-
-
-        // Special handling for BNO085: keep only linear accel + rename to acc_x/y/z
-        if (sensor.toUpperCase().includes('BNO085')) {
-                const labelMap = {
-                    'linear_accel_x': 'AccX',
-                    'linear_accel_y': 'AccY',
-                    'linear_accel_z': 'AccZ'
-                };
-                chart.data.datasets[0].label = labelMap[metric] || metric;
-                chart.update();
-            }
-
-        
-        loading.style.display = 'none';
-        container.style.display = 'block';
-    }
-        
-
-    function densifyWithZeros(data, metric, startTs, endTs, intervalMs = 60000) {  // 1 min default
-        if (data.length === 0) return [];
-
-        const result = [];
-        let currentTs = startTs;
-
-        // Sort data by time just in case
-        const sorted = [...data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        let dataIndex = 0;
-
-        while (currentTs <= endTs) {
-            const currentDate = new Date(currentTs);
-            const nextDataTs = dataIndex < sorted.length ? new Date(sorted[dataIndex].timestamp).getTime() : Infinity;
-
-            if (Math.abs(currentTs - nextDataTs) < intervalMs / 2) {
-                // Close enough → use real value
-                result.push({
-                    x: sorted[dataIndex].timestamp,
-                    y: sorted[dataIndex][metric] ?? 0
-                });
-                dataIndex++;
-            } else {
-                // Gap → force 0
-                result.push({
-                    x: currentDate.toISOString(),
-                    y: 0
-                });
-            }
-
-            currentTs += intervalMs;
-        }
-
-        return result;
-    }
-
-
-    async function loadAndStoreFullData(sensor) {
-    const loading = document.getElementById(`${sensor}-detailed-loading`);
-    loading.innerHTML = '<div class="spinner"></div><div class="loading-text">Loading full history...</div>';
-
-    try {
-        const r = await fetch(`/decimated_data/${sensor}`);
-        if (!r.ok) throw new Error("Failed to load full data");
-
-        const data = await r.json();
-        console.log("Full data length:", data.length);
-        console.log("First entry:", data[0]);
-        console.log("Last entry:", data[data.length-1]);
-        if (!data || data.length === 0) {
-            loading.innerHTML = '<div class="loading-text text-warning">No data available for this sensor</div>';
-            return null;
-        }
-
-        // Store full data
-        fullSensorData[sensor] = data;
-
-        // Extract real first/last timestamp for prefill
-        const times = data.map(d => new Date(d.timestamp).getTime());
-        const minTime = new Date(Math.min(...times));
-        const maxTime = new Date(Math.max(...times));
-
-        // Prefill inputs
-        document.getElementById(`${sensor}-start-date`).value = minTime.toISOString().split('T')[0];
-        document.getElementById(`${sensor}-start-time`).value = minTime.toTimeString().slice(0,5);
-        document.getElementById(`${sensor}-end-date`).value   = maxTime.toISOString().split('T')[0];
-        document.getElementById(`${sensor}-end-time`).value   = maxTime.toTimeString().slice(0,5);
-
-        // Display full data
-        processAndDisplayDetailedData(sensor, data);
-
-        return data;
-    } catch (err) {
-        console.error("Full data load error:", err);
-        loading.innerHTML = '<div class="loading-text text-danger">Failed to load full history</div>';
-        return null;
-    }
-}
-
-    // ─────────────────────────────────────────────────────────────
-    // 5. DOWNLOAD FUNCTION
-    // ─────────────────────────────────────────────────────────────
-
-    function downloadInputRange(sensor) {
-        const startDate = document.getElementById(`${sensor}-start-date`).value;
-        const startTime = document.getElementById(`${sensor}-start-time`).value || '00:00';
-        const endDate   = document.getElementById(`${sensor}-end-date`).value;
-        const endTime   = document.getElementById(`${sensor}-end-time`).value || '23:59';
-
-        if (!startDate || !endDate) {
-            alert("Please set start and end dates first");
-            return;
-        }
-
-        // Format exactly as backend expects (no seconds if not needed, but include if you have them)
-        const start = `${startDate} ${startTime}:00`;
-        const end   = `${endDate} ${endTime}:59`;
-
-        // Optional: Read missing mode (if backend supports it now or later)
-        // const missingMode = document.getElementById(`${sensor}-missing-mode`)?.value || 'na';
-
-        const url = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-
-        // Optional missing param if your backend already handles it
-        // const url = `/download_range/${sensor}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&missing=${missingMode}`;
-
-        window.location.href = url;
-    }
-    // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
     // EVENT LISTENERS & INITIALIZATION
-    // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────
 
-    // Auto-load detailed chart on first tab open
-    // document.getElementById('myTab').addEventListener('shown.bs.tab', e => {
-    //     const target = e.target.getAttribute('data-bs-target').substring(1);
-    //     if (target !== 'main' && sensors[target] && !charts[`${target}-detailed`]) {
-    //         resetToLast24h(target);
-    //     }
-    // });
-
+    // Load full data when sensor tab first opens
     document.getElementById('myTab').addEventListener('shown.bs.tab', e => {
         const target = e.target.getAttribute('data-bs-target').substring(1);
-        if (target !== 'main' && sensors[target] && !charts[`${target}-detailed`]) {
-            loadAndStoreFullData(target);  // ← New: loads full + prefills + displays
+        if (target !== 'main' && sensors[target] && !fullSensorData[target]) {
+            loadAndStoreFullData(target);
         }
     });
-    
+
     // Reload chart when metric changes
     document.querySelectorAll('[id$="-metric"]').forEach(select => {
         select.addEventListener('change', function() {
             const sensor = this.id.replace('-metric', '');
-            loadCustomRangeData(sensor);
+            if (fullSensorData[sensor]) {
+                processAndDisplayDetailedData(sensor, fullSensorData[sensor]);
+            }
         });
     });
 
+    // Reload chart when missing mode changes
     document.querySelectorAll('[id$="-missing-mode"]').forEach(sel => {
         sel.addEventListener('change', function() {
             const sensor = this.id.replace('-missing-mode', '');
